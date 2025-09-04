@@ -1,0 +1,21 @@
+# MCP Server Dependencies for Databricks Apps Deployment
+# This file contains only the runtime dependencies needed for the MCP server
+
+# Databricks SDK and Core Dependencies
+databricks-sdk==0.65.0
+python-dotenv==1.0.1
+
+# FastAPI and Web Server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# MCP Server Framework
+mcp>=1.12.4
+httpx==0.28.1
+
+# Configuration and Data Handling
+pyyaml>=6.0.1
+
+# Optional: Enhanced MCP clients for testing
+databricks-mcp>=0.2.1

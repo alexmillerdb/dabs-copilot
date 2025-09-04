@@ -101,8 +101,29 @@ async def mcp_info():
     return {
         "server_name": servername,
         "tools_count": len(mcp_server._tools) if hasattr(mcp_server, '_tools') else 0,
-        "environment": os.getenv("ENVIRONMENT", "dev")
+        "environment": os.getenv("ENVIRONMENT", "dev"),
+        "mcp_endpoint": "/mcp/",
+        "databricks_apps_mode": is_databricks_apps_environment()
     }
+
+# App URL discovery endpoint for Databricks Apps
+@app.get("/app-info")
+async def app_info():
+    """Databricks Apps information"""
+    return {
+        "app_name": servername,
+        "version": "0.2.0",
+        "mcp_endpoint": "/mcp/",
+        "health_endpoint": "/health",
+        "environment": os.getenv("ENVIRONMENT", "dev"),
+        "databricks_apps": is_databricks_apps_environment(),
+        "host": os.getenv("SERVER_HOST", "localhost"),
+        "port": int(os.getenv("SERVER_PORT", "8000"))
+    }
+
+def is_databricks_apps_environment():
+    """Detect if running in Databricks Apps"""
+    return os.getenv("DATABRICKS_RUNTIME_VERSION") is not None
 
 # Serve static files if directory exists
 static_path = Path("static")
@@ -112,11 +133,18 @@ if static_path.exists():
 if __name__ == "__main__":
     import uvicorn
     
-    host = os.getenv("SERVER_HOST", "localhost")
+    # Use 0.0.0.0 for Databricks Apps, localhost for local dev
+    default_host = "0.0.0.0" if is_databricks_apps_environment() else "localhost"
+    host = os.getenv("SERVER_HOST", default_host)
     port = int(os.getenv("SERVER_PORT", "8000"))
-    reload = os.getenv("RELOAD", "true").lower() == "true"
+    
+    # Disable reload in production/Databricks Apps
+    default_reload = "false" if is_databricks_apps_environment() else "true"
+    reload = os.getenv("RELOAD", default_reload).lower() == "true"
     
     logger.info(f"Starting server on {host}:{port}")
+    logger.info(f"Databricks Apps mode: {is_databricks_apps_environment()}")
+    logger.info(f"MCP endpoint will be available at: /mcp/")
     
     uvicorn.run(
         "app:app",

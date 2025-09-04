@@ -1,7 +1,8 @@
 # Databricks Core Dependencies
 databricks-connect==17.1.2
 databricks-sdk==0.65.0
-databricks-cli==0.18.0
+# Note: Databricks CLI v2 is a standalone binary, install separately:
+# curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
 
 # Environment and Configuration
 python-dotenv==1.0.1
