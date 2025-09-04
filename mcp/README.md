@@ -210,7 +210,103 @@ To connect the MCP server with Claude Code CLI:
    "Export the notebook at /Users/alex.miller/example.py"
    ```
 
+3. **Generate DABs from notebooks:**
+   ```
+   "Export notebook at /Users/alex.miller@databricks.com/genai-business-agent/agents/driver"
+   "Create DAB generation and output as test_dab.yaml"
+   ```
+
 The MCP server will automatically start when Claude needs to use the tools.
+
+## 📦 DAB Generation Example
+
+The MCP server can analyze exported notebooks and generate comprehensive Databricks Asset Bundles (DABs). Here's how:
+
+### Quick Start for DAB Generation
+
+1. **Export a notebook using MCP tools:**
+   ```python
+   # Via Claude: "Export notebook at /path/to/your/notebook"
+   # Or directly with the tool:
+   await mcp.call_tool("export_notebook", {
+     "path": "/Users/alex.miller@databricks.com/genai-business-agent/agents/driver",
+     "format": "SOURCE"
+   })
+   ```
+
+2. **Generate a DAB from the exported notebook:**
+   Claude will analyze the notebook and create a complete bundle configuration including:
+   - Job definitions with task dependencies
+   - Cluster configurations
+   - Unity Catalog resources (models, functions, schemas)
+   - Environment-specific settings (dev, staging, prod)
+   - Schedule configurations
+   - Permission management
+
+### Example Generated DAB Structure
+
+```yaml
+bundle:
+  name: genai-business-agent
+  description: Tool-calling agent for analyzing GenAI consumption patterns
+
+resources:
+  jobs:
+    genai_agent_deployment:
+      tasks:
+        - task_key: setup_environment
+        - task_key: create_uc_tools
+        - task_key: train_agent
+        - task_key: evaluate_agent
+        - task_key: deploy_agent
+      
+  models:
+    genai_consumption_agent:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      
+  schemas:
+    genai_functions:
+      functions:
+        - name: get_genai_consumption_growth
+        - name: get_genai_consumption_data_daily
+
+targets:
+  dev:
+    mode: development
+    default: true
+  staging:
+    mode: development
+  prod:
+    mode: production
+```
+
+### Deploy the Generated DAB
+
+```bash
+# Validate the generated bundle
+databricks bundle validate
+
+# Deploy to development
+databricks bundle deploy --target dev
+
+# Run the job
+databricks bundle run genai_agent_deployment --target dev
+```
+
+### What Gets Generated
+
+The DAB generator creates:
+- **Multi-task workflows** with proper dependencies
+- **Job clusters** with appropriate Spark configurations
+- **Unity Catalog resources** (models, functions, schemas)
+- **Vector search indexes** for RAG applications
+- **Environment configurations** for dev/staging/prod
+- **Quality monitoring** and inference logging
+- **Permission sets** for team collaboration
+- **Scheduled jobs** for data pipelines
+
+The generated DAB follows Databricks best practices and is production-ready.
 
 ## 🚧 Development Status
 
@@ -222,11 +318,12 @@ The MCP server will automatically start when Claude needs to use the tools.
 - [x] Databricks SDK integration with profile support
 - [x] Comprehensive testing suite
 
-### 🔜 Phase 2 (Week 2-3) - DAB Generation
-- [ ] `analyze_notebook` - Deep notebook analysis
-- [ ] `generate_bundle` - Create DAB configurations
-- [ ] `validate_bundle` - Bundle validation
-- [ ] `create_tests` - Test scaffold generation
+### 🚀 Phase 2 (Week 2-3) - DAB Generation
+- [x] DAB generation from notebook exports (demonstrated)
+- [ ] `analyze_notebook` - Deep notebook analysis tool
+- [ ] `generate_bundle` - Automated DAB creation tool
+- [ ] `validate_bundle` - Bundle validation tool
+- [ ] `create_tests` - Test scaffold generation tool
 
 ### 🔮 Phase 3 (Week 3-4) - Production Features
 - [ ] FastAPI routes for web UI
