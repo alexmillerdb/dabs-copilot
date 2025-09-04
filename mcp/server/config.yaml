@@ -1,0 +1,56 @@
+# Databricks MCP Server Configuration
+# Following reference implementation pattern
+
+servername: "databricks-mcp-server"
+version: "0.2.0"
+
+# Server configuration
+server:
+  title: "Databricks MCP Server"
+  host: "localhost"
+  port: 8000
+  debug: false
+  reload: true
+
+# MCP configuration  
+mcp:
+  name: "databricks-mcp-server"
+  host: "localhost"
+  port: 5173
+
+# Databricks connection (will be overridden by environment variables)
+databricks:
+  host: "${DATABRICKS_HOST}"
+  token: "${DATABRICKS_TOKEN}" 
+  warehouse_id: "${DATABRICKS_WAREHOUSE_ID}"
+
+# CORS settings
+cors:
+  enabled: true
+  origins:
+    - "http://localhost:3000"
+    - "http://localhost:5173" 
+    - "https://*.databricks.com"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Tools configuration
+tools:
+  enabled:
+    - health
+    - list_jobs
+    - get_job
+    - run_job  
+    - list_notebooks
+    - export_notebook
+    - execute_dbsql
+    - list_warehouses
+    - list_dbfs_files
+    
+  rate_limits:
+    default: "100/minute"
+    export_notebook: "10/minute"
+    execute_dbsql: "50/minute"
