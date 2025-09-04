@@ -198,23 +198,19 @@ Error responses:
 
 To connect the MCP server with Claude Code CLI:
 
-1. **Start the MCP server:**
+1. **Add the MCP server to Claude:**
    ```bash
-   cd mcp/server
-   python main.py
+   claude mcp add --scope user databricks-mcp python mcp/server/main.py
    ```
 
-2. **Connect Claude Code CLI** (in another terminal):
-   ```bash
-   claude-code-cli connect stdio://path/to/mcp/server/main.py
-   ```
-
-3. **Test tools via Claude:**
+2. **Test tools via Claude:**
    ```
    "Check the health of my Databricks connection"
    "List the first 5 jobs in my workspace"
    "Export the notebook at /Users/alex.miller/example.py"
    ```
+
+The MCP server will automatically start when Claude needs to use the tools.
 
 ## 🚧 Development Status
 
