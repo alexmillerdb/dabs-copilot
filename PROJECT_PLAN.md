@@ -67,24 +67,23 @@ This project builds a **Databricks-native AI Copilot** powered by **Claude Code 
 
 ## 4-Week Timeline (Revised with UI in MVP)
 
-### Week 1 – Setup & Foundations
+### Week 1 – Setup & Foundations ✅ COMPLETED
 
-* Configure **Unity Catalog** + serverless.
-* Store **Claude API key in secret scope**.
-* Prototype Claude SDK call in notebook.
-* Prototype MCP tool call (managed UC functions).
-* Deliverables: dev env + skeleton Claude integration.
+* ✅ Configure **Unity Catalog** + serverless.
+* ✅ Store **Claude API key in secret scope**.
+* ✅ Databricks workspace configured and ready.
+* ✅ GitHub repository created.
 
-### Week 2 – Custom MCP Server Core
+### Week 2 – Custom MCP Server Core (CURRENT FOCUS)
 
-* Build **Databricks App (MCP server)** exposing:
-
-  * `list_jobs`, `run_job`
+* Build **Custom MCP Server** (standalone Python) exposing:
+  * `list_jobs`, `get_job`, `run_job`
   * `list_notebooks`, `export_notebook`
-* Deploy app via `databricks apps deploy`.
-* Wire Claude agent to call MCP tools.
-* Unit tests for MCP handlers.
-* Deliverables: Claude can list/run jobs through MCP.
+* **Test with Claude Code CLI locally** before Databricks deployment
+* Wire Claude agent to call MCP tools via Claude Code SDK
+* Unit tests for MCP handlers
+* Deploy as Databricks App after local validation
+* Deliverables: Claude can list/run jobs through MCP tested via CLI
 
 ### Week 3 – Expand & Polish
 
@@ -259,14 +258,29 @@ This project builds a **Databricks-native AI Copilot** powered by **Claude Code 
 
 ---
 
+## Implementation Approach (NEW)
+
+### Testing Strategy with Claude Code CLI
+
+Before deploying to Databricks, we'll:
+1. **Build MCP server locally** as a standalone Python application
+2. **Test with Claude Code CLI** to validate tool functionality
+3. **Connect to Databricks workspace** via Databricks SDK
+4. **Iterate quickly** without deployment overhead
+5. **Deploy to Databricks Apps** only after validation
+
+This approach allows rapid development and testing of MCP tools before committing to Databricks deployment.
+
+---
+
 ## Checklist Summary
 
-**Before coding:**
+**Before coding:** ✅ COMPLETED
 
-* [ ] Unity Catalog enabled workspace.
-* [ ] Serverless compute available.
-* [ ] Secret scope with Claude API key.
-* [ ] GitHub repo created.
+* [x] Unity Catalog enabled workspace.
+* [x] Serverless compute available.
+* [x] Secret scope with Claude API key.
+* [x] GitHub repo created.
 
 **By end of Week 2:**
 

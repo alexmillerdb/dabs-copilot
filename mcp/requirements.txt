@@ -1,0 +1,18 @@
+# Core MCP and API dependencies
+mcp
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# Databricks and Claude SDKs
+databricks-sdk 
+anthropic
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov
+
+# Utilities
+python-json-logger
+tenacity

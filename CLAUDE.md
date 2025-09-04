@@ -36,18 +36,21 @@ You are helping build a **Databricks AI Copilot** that uses Claude Code SDK and 
 ## Implementation Timeline
 
 ### Current Status
-- [ ] Week 1: Setup foundations
-- [ ] Week 2: Build MCP server core
+- [x] Week 1: Setup foundations ✅ COMPLETED
+- [ ] Week 2: Build MCP server core 🚧 IN PROGRESS
 - [ ] Week 3: Expand toolset and polish
 - [ ] Week 4: Create custom UI
 
+### Current Focus: MCP Server Development
+**Priority**: Build and test custom MCP server with Claude Code CLI before Databricks deployment
+
 ## Key Technical Requirements
 
-### Environment Setup
-- Unity Catalog enabled workspace
-- Serverless compute (preferred) or cluster fallback
-- Claude API key stored in Databricks secret scope
-- GitHub repository for version control
+### Environment Setup ✅ COMPLETED
+- ✅ Unity Catalog enabled workspace
+- ✅ Serverless compute configured
+- ✅ Claude API key stored in Databricks secret scope
+- ✅ GitHub repository for version control
 
 ### Security Requirements
 - OAuth authentication for UI
@@ -148,6 +151,21 @@ tools = {
 - Bundle deployment
 
 ## Common Commands
+
+### MCP Server Development (NEW)
+```bash
+# Test MCP server locally with Claude Code CLI
+cd backend/mcp_server
+python -m mcp_server
+
+# In another terminal, test with Claude Code
+claude-code-cli connect localhost:5173
+claude-code-cli test-tool list_jobs
+claude-code-cli test-tool list_notebooks --path /Users/
+
+# Run MCP server tests
+pytest tests/test_mcp_server.py
+```
 
 ### Development
 ```bash
@@ -264,12 +282,40 @@ databricks bundle deploy --target dev
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [Databricks Asset Bundles](https://docs.databricks.com/dev-tools/bundles)
 
+## MCP Server Testing Approach (NEW)
+
+### Local Development with Claude Code CLI
+1. **Build MCP server as standalone Python app** 
+   - Use Databricks SDK for workspace connections
+   - Implement MCP protocol handlers
+   - Start with basic tools (list_jobs, list_notebooks)
+
+2. **Test with Claude Code CLI locally**
+   ```bash
+   # Start MCP server
+   python -m backend.mcp_server
+   
+   # Test with Claude Code CLI
+   claude-code-cli connect localhost:5173
+   claude-code-cli chat "List all jobs in my workspace"
+   ```
+
+3. **Iterate rapidly** without deployment overhead
+   - Fix issues immediately
+   - Add tools incrementally
+   - Validate each tool works correctly
+
+4. **Deploy to Databricks** only after local validation
+
+This approach ensures the MCP server works correctly before dealing with Databricks deployment complexity.
+
 ## Implementation Workflow
 
 When implementing ANY feature:
 1. **FIRST**: Read relevant documentation in `/docs` folder
-2. **SECOND**: Check the PROJECT_PLAN.md for scope and requirem
+2. **SECOND**: Check the PROJECT_PLAN.md for scope and requirements
 3. **THIRD**: Begin implementation following the patterns found
+4. **FOURTH**: Test locally with Claude Code CLI before deployment
 
 ## Next Steps
 
