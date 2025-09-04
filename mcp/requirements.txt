@@ -19,3 +19,16 @@ pyyaml>=6.0.1
 
 # Optional: Enhanced MCP clients for testing
 databricks-mcp>=0.2.1
+
+# Phase 2: DAB Generation Dependencies
+astunparse>=1.6      # Python AST manipulation
+sqlparse>=0.4        # SQL parsing for notebook analysis
+jinja2>=3.1          # Template engine for bundle generation
+jsonschema>=4.0      # Schema validation for bundles
+
+# Testing and Development
+pytest>=7.0          # Testing framework
+pytest-asyncio>=0.21 # Async test support
+pytest-mock>=3.10    # Mocking support
+black>=23.0          # Code formatting
+ruff>=0.1            # Linting

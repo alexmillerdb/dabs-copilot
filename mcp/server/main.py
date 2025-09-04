@@ -6,6 +6,9 @@ Simple MCP server runner for testing with Claude Code CLI
 import asyncio
 from tools import mcp
 
+# Import DAB tools to register them with the MCP server
+import tools_dab
+
 async def main():
     """Run MCP server"""
     print("Starting Databricks MCP server...")

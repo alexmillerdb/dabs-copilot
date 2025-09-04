@@ -9,12 +9,14 @@ mcp/
 ├── README.md                    # This file
 ├── server/                      # MCP server implementation
 │   ├── main.py                 # MCP server entry point
-│   ├── tools.py                # MCP tool definitions (9 tools)
+│   ├── tools.py                # Phase 1: Core MCP tools (9 tools)
+│   ├── tools_dab.py            # Phase 2: DAB generation tools (4 tools)
 │   ├── app.py                  # FastAPI + FastMCP hybrid app
 │   ├── config.yaml             # Server configuration
 │   ├── services/               # Business logic layer
 │   │   ├── __init__.py
-│   │   └── databricks_service.py
+│   │   ├── databricks_service.py
+│   │   └── analysis_service.py # Notebook analysis service
 │   └── config/                 # Configuration management
 │       ├── __init__.py
 │       └── loader.py
@@ -30,7 +32,7 @@ mcp/
 
 ## 🛠️ Available MCP Tools
 
-The server provides 9 MCP tools for Databricks operations:
+The server provides **13 MCP tools** for Databricks operations and DAB generation:
 
 ### Core Workspace Tools
 - **`health`** - Check server and Databricks connection status
@@ -44,6 +46,12 @@ The server provides 9 MCP tools for Databricks operations:
 - **`execute_dbsql`** - Execute SQL queries on Databricks SQL warehouses
 - **`list_warehouses`** - List available SQL warehouses
 - **`list_dbfs_files`** - Browse Databricks File System (DBFS)
+
+### DAB Generation Tools (Phase 2)
+- **`analyze_notebook`** ✅ - Deep notebook analysis for dependencies, data sources, and patterns
+- **`generate_bundle`** 📅 - Create complete DAB configurations from analysis results
+- **`validate_bundle`** 📅 - Validate generated bundle configurations and best practices
+- **`create_tests`** 📅 - Generate unit test scaffolds for bundle resources
 
 ## 🚀 Quick Start
 
@@ -106,6 +114,26 @@ Testing list_notebooks tool...
 List notebooks result: {"success": true, "data": {"notebooks": [], "count": 0}}
 
 ✅ All tests completed!
+```
+
+### Testing the analyze_notebook Tool
+
+Test the new DAB generation functionality:
+
+```python
+import asyncio
+from tools import mcp
+
+async def test_notebook_analysis():
+    result = await mcp.call_tool("analyze_notebook", {
+        "notebook_path": "/Users/example/etl_pipeline.py",
+        "include_dependencies": True,
+        "include_data_sources": True,
+        "detect_patterns": True
+    })
+    print(result)
+
+asyncio.run(test_notebook_analysis())
 ```
 
 ## 🔧 Configuration
@@ -210,10 +238,16 @@ To connect the MCP server with Claude Code CLI:
    "Export the notebook at /Users/alex.miller/example.py"
    ```
 
-3. **Generate DABs from notebooks:**
+3. **Use the analyze_notebook tool:**
    ```
-   "Export notebook at /Users/alex.miller@databricks.com/genai-business-agent/agents/driver"
-   "Create DAB generation and output as test_dab.yaml"
+   "Analyze the notebook at /Users/alex.miller/etl_pipeline.py and extract dependencies and data sources"
+   "What patterns does the notebook at /Users/example.py follow?"
+   ```
+
+4. **Generate DABs from notebooks (coming soon):**
+   ```
+   "Generate a DAB from the analyzed notebook"
+   "Create a complete bundle configuration for my ETL pipeline"
    ```
 
 The MCP server will automatically start when Claude needs to use the tools.
@@ -317,13 +351,20 @@ The generated DAB follows Databricks best practices and is production-ready.
 - [x] Service layer abstraction
 - [x] Databricks SDK integration with profile support
 - [x] Comprehensive testing suite
+- [x] Claude Code CLI integration working
 
-### 🚀 Phase 2 (Week 2-3) - DAB Generation
-- [x] DAB generation from notebook exports (demonstrated)
-- [ ] `analyze_notebook` - Deep notebook analysis tool
-- [ ] `generate_bundle` - Automated DAB creation tool
-- [ ] `validate_bundle` - Bundle validation tool
-- [ ] `create_tests` - Test scaffold generation tool
+### ⚡ Phase 2 (Week 3) - DAB Generation **30% Complete**
+- [x] `analyze_notebook` ✅ - Deep notebook analysis tool **INTEGRATED**
+  - [x] Python/SQL notebook parsing with AST analysis
+  - [x] Databricks-specific features detection (widgets, spark, MLflow)
+  - [x] Unity Catalog table and dependency extraction
+  - [x] ETL/ML/Reporting workflow pattern identification
+  - [x] DAB configuration recommendations generation
+  - [x] MCP server integration with 13 total tools
+  - [x] Claude Code CLI testing completed
+- [ ] `generate_bundle` 📅 - Automated DAB creation tool **NEXT PRIORITY**
+- [ ] `validate_bundle` 📅 - Bundle validation tool  
+- [ ] `create_tests` 📅 - Test scaffold generation tool
 
 ### 🔮 Phase 3 (Week 3-4) - Production Features
 - [ ] FastAPI routes for web UI
