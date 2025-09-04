@@ -11,7 +11,7 @@
 You are helping build a **Databricks AI Copilot** that uses Claude Code SDK and Model Context Protocol (MCP) to help Data Engineers and ML Engineers analyze notebooks/jobs and generate Databricks Asset Bundles (DABs) with unit tests.
 
 ## Current Sprint: 4-Week MVP Hackathon
-**Goal**: Deploy a working Databricks App with custom UI that allows users to interact with Claude to analyze existing Databricks assets and generate DABs.
+**Goal**: Deploy a working MCP server integrated with Claude Code CLI that allows users to analyze existing Databricks assets and generate DABs.
 
 ## Architecture Components
 
@@ -20,29 +20,31 @@ You are helping build a **Databricks AI Copilot** that uses Claude Code SDK and 
 - Connects to MCP servers for Databricks operations
 - Generates DABs and unit tests from analysis
 
-### 2. MCP Integration
+### 2. MCP Integration ✅ Phase 1 COMPLETE
 - **Managed MCP**: Unity Catalog functions, Genie, Vector Search
-- **Custom MCP Server**: Databricks App exposing:
-  - `list_jobs`, `run_job`
-  - `list_notebooks`, `export_notebook`
-  - Additional workspace operations
+- **Custom MCP Server**: Working implementation with 9 operational tools:
+  - `health` - Server and Databricks connection status
+  - `list_jobs`, `get_job`, `run_job` - Job management
+  - `list_notebooks`, `export_notebook` - Notebook operations
+  - `execute_dbsql`, `list_warehouses` - SQL operations
+  - `list_dbfs_files` - File system browsing
 
-### 3. Custom Databricks App UI
-- **Tech Stack**: React 18 + TypeScript
-- **Layout**: 3-panel design (Resource Explorer, Chat, Output)
-- **Authentication**: Databricks OAuth
-- **Deployment**: Serverless via Databricks Apps
+### 3. Claude Code CLI Integration
+- **Connection Mode**: stdio-based MCP server
+- **Authentication**: Uses existing Databricks CLI profiles
+- **Deployment**: Local server or Databricks Apps (optional)
+- **Interface**: Natural language chat through Claude
 
 ## Implementation Timeline
 
 ### Current Status
 - [x] Week 1: Setup foundations ✅ COMPLETED
-- [ ] Week 2: Build MCP server core 🚧 IN PROGRESS
-- [ ] Week 3: Expand toolset and polish
-- [ ] Week 4: Create custom UI
+- [x] Week 2: Build MCP server core ✅ COMPLETED (Phase 1)
+- [ ] Week 3: Expand toolset (Phase 2: DAB generation) 🚧 IN PROGRESS
+- [ ] Week 4: Polish and production deployment
 
-### Current Focus: MCP Server Development
-**Priority**: Build and test custom MCP server with Claude Code CLI before Databricks deployment
+### Current Focus: Phase 2 - DAB Generation Tools
+**Next Priority**: Implement notebook analysis and DAB generation tools
 
 ## Key Technical Requirements
 
@@ -68,11 +70,11 @@ You are helping build a **Databricks AI Copilot** that uses Claude Code SDK and 
    - Include proper targets (dev only for MVP)
    - Generate unit test scaffolds
 
-3. **Interactive UI**
-   - Chat interface with Claude
-   - Resource selection (notebooks/jobs)
-   - Preview generated artifacts
-   - Deploy to dev environment
+3. **Interactive Claude Integration**
+   - Natural language interface via Claude Code CLI
+   - Resource selection through conversation
+   - Preview generated artifacts in chat
+   - Deploy to dev environment via MCP tools
 
 ## Development Guidelines
 
@@ -90,50 +92,61 @@ dabs-copilot/
 │   ├── mcp_server/      # Custom MCP implementation
 │   ├── claude_agent/    # Claude SDK integration
 │   └── api/            # FastAPI backend
-├── frontend/
-│   ├── src/
-│   │   ├── components/ # React components
-│   │   ├── hooks/     # Custom React hooks
-│   │   └── utils/     # Helper functions
-│   └── public/
+├── mcp/                # MCP server implementation
+│   ├── server/        # Server code with 9 working tools
+│   ├── scripts/       # Deployment and testing scripts
+│   └── tests/         # Test suite
 ├── databricks/
 │   ├── apps/          # Databricks App configs
 │   └── notebooks/     # Development notebooks
 └── tests/
 ```
 
-### API Endpoints
-- `POST /chat` - Send message to Claude agent
-- `GET /resources` - List workspace resources
-- `POST /analyze` - Analyze selected resource
-- `POST /generate-dab` - Generate DAB from analysis
-- `POST /deploy` - Deploy bundle to dev
+### MCP Server Endpoints
+- **stdio mode** - Primary interface for Claude Code CLI
+- **FastAPI mode** (optional) - HTTP endpoints for future integrations:
+  - `GET /health` - Server health check
+  - `GET /mcp-info` - List available tools
+  - Future: REST API for tool execution
 
 ### MCP Tool Definitions
+
+#### Phase 1 Tools (✅ COMPLETE - Working in /mcp)
 ```python
-# Essential tools for MVP
+# Production-ready tools now available
 tools = {
+    "health": "Check server and Databricks connection",
     "list_jobs": "List all jobs in workspace",
     "get_job": "Get job configuration details",
-    "run_job": "Execute a job",
+    "run_job": "Execute a job with parameters",
     "list_notebooks": "List notebooks in path",
-    "export_notebook": "Export notebook content",
-    "create_bundle": "Generate bundle.yml",
-    "validate_bundle": "Validate DAB configuration"
+    "export_notebook": "Export notebook in multiple formats",
+    "execute_dbsql": "Execute SQL queries",
+    "list_warehouses": "List SQL warehouses",
+    "list_dbfs_files": "Browse Databricks File System"
 }
 ```
 
-### UI Component Structure
-```typescript
-// Main components
-<App>
-  <Header />
-  <MainLayout>
-    <ResourceExplorer />
-    <ChatInterface />
-    <OutputPanel />
-  </MainLayout>
-</App>
+#### Phase 2 Tools (🚧 Next Priority)
+```python
+# DAB generation tools to implement
+tools_phase2 = {
+    "analyze_notebook": "Deep notebook analysis",
+    "generate_bundle": "Create bundle.yml",
+    "validate_bundle": "Validate DAB configuration",
+    "create_tests": "Generate unit test scaffolds"
+}
+```
+
+### Claude Code CLI Usage
+```bash
+# Add MCP server to Claude
+claude mcp add --scope user databricks-mcp python mcp/server/main.py
+
+# Use natural language to interact
+"List all jobs in my workspace"
+"Export the notebook at /Users/alex/etl.py"
+"Generate a DAB for this notebook"
 ```
 
 ## Testing Strategy
@@ -141,7 +154,6 @@ tools = {
 ### Unit Tests
 - MCP server handlers
 - Claude agent logic
-- React component tests
 - API endpoint tests
 
 ### Integration Tests
@@ -152,37 +164,41 @@ tools = {
 
 ## Common Commands
 
-### MCP Server Development (NEW)
+### MCP Server Development ✅ WORKING
 ```bash
-# Test MCP server locally with Claude Code CLI
-cd backend/mcp_server
-python -m mcp_server
+# Start MCP server for Claude Code CLI
+cd mcp/server
+python main.py
 
-# In another terminal, test with Claude Code
-claude-code-cli connect localhost:5173
-claude-code-cli test-tool list_jobs
-claude-code-cli test-tool list_notebooks --path /Users/
+# Register with Claude (one-time setup)
+claude mcp add --scope user databricks-mcp python /path/to/mcp/server/main.py
 
-# Run MCP server tests
-pytest tests/test_mcp_server.py
+# Test MCP server locally
+cd mcp
+python test_local_mcp.py test  # Quick validation
+python test_local_mcp.py stdio # Test STDIO mode
+
+# Run comprehensive tests
+cd mcp/tests
+python test_tools.py
 ```
 
 ### Development
 ```bash
-# Backend
-cd backend && pip install -r requirements.txt
-python -m uvicorn api.main:app --reload
+# Install dependencies
+pip install -r requirements.txt
 
-# Frontend  
-cd frontend && npm install
-npm run dev
+# Start FastAPI server (optional, for HTTP access)
+cd mcp/server
+python app.py
 
-# Databricks App deployment
-databricks apps deploy --app-name dabs-copilot
+# Databricks App deployment (optional)
+cd mcp
+./scripts/deploy.sh
 
 # Run tests
-pytest backend/tests/
-npm run test
+cd mcp/tests
+python test_tools.py
 ```
 
 ### Databricks CLI
@@ -212,10 +228,10 @@ databricks bundle deploy --target dev
 - Token limit management
 - Fallback to simpler prompts
 
-### UI Error States
-- Loading spinners during operations
-- Error boundaries for component crashes
-- User-friendly error messages
+### Claude Integration Error States
+- Clear error messages in chat responses
+- Graceful degradation if tools unavailable
+- User-friendly explanations of issues
 
 ## Performance Considerations
 
@@ -223,7 +239,7 @@ databricks bundle deploy --target dev
 - Chat response time < 3 seconds
 - Resource listing < 1 second
 - Bundle generation < 10 seconds
-- UI rendering < 100ms
+- Tool execution < 2 seconds
 
 ### Caching Strategy
 - Cache workspace resources (5 min TTL)
@@ -243,16 +259,16 @@ databricks bundle deploy --target dev
 ## MVP Success Criteria
 
 1. **Functional Requirements**
-   - [ ] User can authenticate via OAuth
-   - [ ] User can select notebooks/jobs from UI
+   - [x] User authenticated via Databricks CLI profile
+   - [x] User can select notebooks/jobs via Claude chat
    - [ ] Claude analyzes selected resources
    - [ ] System generates valid bundle.yml
-   - [ ] User can preview generated artifacts
+   - [ ] User can preview generated artifacts in chat
    - [ ] User can deploy to dev environment
 
 2. **Non-Functional Requirements**
    - [ ] Response time < 5 seconds for analysis
-   - [ ] UI responsive on desktop browsers
+   - [x] MCP server responds quickly to Claude requests
    - [ ] Handles 10 concurrent users
    - [ ] 95% uptime during demo
 
@@ -263,11 +279,11 @@ databricks bundle deploy --target dev
 2. **Claude timeout**: Reduce prompt complexity
 3. **OAuth fails**: Verify redirect URIs
 4. **Bundle invalid**: Check YAML formatting
-5. **UI not updating**: Check WebSocket connection
+5. **MCP tools not available**: Check server registration with Claude
 
 ### Logging
 - Backend: Python `logging` module
-- Frontend: Browser console + error tracking
+- Claude: Tool response messages
 - MCP: Structured logs to Unity Catalog
 
 ## References
@@ -282,32 +298,37 @@ databricks bundle deploy --target dev
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [Databricks Asset Bundles](https://docs.databricks.com/dev-tools/bundles)
 
-## MCP Server Testing Approach (NEW)
+## MCP Server Implementation ✅ COMPLETE
 
-### Local Development with Claude Code CLI
-1. **Build MCP server as standalone Python app** 
-   - Use Databricks SDK for workspace connections
-   - Implement MCP protocol handlers
-   - Start with basic tools (list_jobs, list_notebooks)
+### Phase 1 Achievements
+1. **9 Working MCP Tools**
+   - Full Databricks workspace integration
+   - Jobs, notebooks, SQL, and file system operations
+   - Tested against live workspace
 
-2. **Test with Claude Code CLI locally**
+2. **Claude Code CLI Integration**
    ```bash
-   # Start MCP server
-   python -m backend.mcp_server
+   # Working command for Claude integration
+   claude mcp add --scope user databricks-mcp python /path/to/mcp/server/main.py
    
-   # Test with Claude Code CLI
-   claude-code-cli connect localhost:5173
-   claude-code-cli chat "List all jobs in my workspace"
+   # Natural language queries work immediately
+   "List all jobs in my workspace"
+   "Export notebook at /Users/alex/etl.py"
+   "Run SQL query: SELECT * FROM main.default.sales"
    ```
 
-3. **Iterate rapidly** without deployment overhead
-   - Fix issues immediately
-   - Add tools incrementally
-   - Validate each tool works correctly
+3. **Production-Ready Architecture**
+   - Profile-based authentication using existing CLI setup
+   - Environment-aware configuration with YAML + env vars
+   - Comprehensive error handling and logging
+   - Service layer separation for clean testing
 
-4. **Deploy to Databricks** only after local validation
+4. **Deployment Options**
+   - Local server for development (stdio mode)
+   - FastAPI hybrid for HTTP access
+   - Databricks Apps deployment scripts ready
 
-This approach ensures the MCP server works correctly before dealing with Databricks deployment complexity.
+The MCP server is fully operational and ready for Phase 2 DAB generation tools.
 
 ## Implementation Workflow
 
