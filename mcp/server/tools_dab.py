@@ -16,7 +16,8 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import workspace
 
 from services.analysis_service import NotebookAnalysisService
-from tools import mcp, create_success_response, create_error_response
+# Import shared utilities from tools.py
+from tools import mcp, create_success_response, create_error_response, workspace_client as shared_workspace_client
 
 # Configure logging
 logging.basicConfig(
@@ -27,29 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize services
 analysis_service = NotebookAnalysisService()
-workspace_client = None
 
-
-def init_databricks_client():
-    """Initialize Databricks workspace client using profile or default auth"""
-    global workspace_client
-    try:
-        profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps")
-        if profile:
-            workspace_client = WorkspaceClient(profile=profile)
-            logger.info(f"Connected to Databricks using profile: {profile}")
-        else:
-            workspace_client = WorkspaceClient()
-            logger.info("Connected to Databricks using default authentication")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to initialize Databricks client: {e}")
-        workspace_client = None
-        return False
-
-
-# Initialize on module load
-init_databricks_client()
+# Use the shared workspace client from tools.py instead of creating a duplicate
+workspace_client = shared_workspace_client
 
 
 @mcp.tool()

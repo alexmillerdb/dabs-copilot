@@ -32,7 +32,7 @@ mcp/
 
 ## 🛠️ Available MCP Tools
 
-The server provides **13 MCP tools** for Databricks operations and DAB generation:
+The server provides **14 MCP tools** for Databricks operations and DAB generation:
 
 ### Core Workspace Tools
 - **`health`** - Check server and Databricks connection status
@@ -48,6 +48,7 @@ The server provides **13 MCP tools** for Databricks operations and DAB generatio
 - **`list_dbfs_files`** - Browse Databricks File System (DBFS)
 
 ### DAB Generation Tools (Phase 2)
+- **`generate_bundle_from_job`** ✅ - Generate DAB from existing jobs using native Databricks CLI
 - **`analyze_notebook`** ✅ - Deep notebook analysis for dependencies, data sources, and patterns
 - **`generate_bundle`** 📅 - Create complete DAB configurations from analysis results
 - **`validate_bundle`** 📅 - Validate generated bundle configurations and best practices
@@ -238,16 +239,18 @@ To connect the MCP server with Claude Code CLI:
    "Export the notebook at /Users/alex.miller/example.py"
    ```
 
-3. **Use the analyze_notebook tool:**
+3. **Generate DABs from existing jobs:**
    ```
-   "Analyze the notebook at /Users/alex.miller/etl_pipeline.py and extract dependencies and data sources"
-   "What patterns does the notebook at /Users/example.py follow?"
+   "List my jobs"
+   "Generate a bundle from job ID 456"
+   "Create a DAB from the ETL pipeline job"
    ```
 
-4. **Generate DABs from notebooks (coming soon):**
+4. **Analyze notebooks for DAB generation:**
    ```
+   "Analyze the notebook at /Users/alex.miller/etl_pipeline.py and extract dependencies"
+   "What patterns does the notebook at /Users/example.py follow?"
    "Generate a DAB from the analyzed notebook"
-   "Create a complete bundle configuration for my ETL pipeline"
    ```
 
 The MCP server will automatically start when Claude needs to use the tools.
@@ -257,6 +260,22 @@ The MCP server will automatically start when Claude needs to use the tools.
 The MCP server can analyze exported notebooks and generate comprehensive Databricks Asset Bundles (DABs). Here's how:
 
 ### Quick Start for DAB Generation
+
+#### Method 1: Generate from Existing Jobs (Recommended)
+
+1. **List your existing jobs:**
+   ```
+   "List my Databricks jobs"
+   ```
+
+2. **Generate a DAB from an existing job:**
+   ```
+   "Generate a bundle from job ID 123"
+   ```
+   
+   This uses the native Databricks CLI command `databricks bundle generate job --existing-job-id <job_id>` to create a production-ready bundle.
+
+#### Method 2: Generate from Notebook Analysis
 
 1. **Export a notebook using MCP tools:**
    ```python
@@ -268,8 +287,13 @@ The MCP server can analyze exported notebooks and generate comprehensive Databri
    })
    ```
 
-2. **Generate a DAB from the exported notebook:**
-   Claude will analyze the notebook and create a complete bundle configuration including:
+2. **Analyze the notebook:**
+   ```
+   "Analyze the notebook at /Users/alex.miller/etl_pipeline.py"
+   ```
+
+3. **Generate a DAB from the analysis:**
+   Claude will create a complete bundle configuration including:
    - Job definitions with task dependencies
    - Cluster configurations
    - Unity Catalog resources (models, functions, schemas)
