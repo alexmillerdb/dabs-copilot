@@ -16,6 +16,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import workspace
 
 from services.analysis_service import NotebookAnalysisService
+from services.validation_service import BundleValidationService
 # Import shared utilities from tools.py
 from tools import mcp, create_success_response, create_error_response, workspace_client as shared_workspace_client
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize services
 analysis_service = NotebookAnalysisService()
+validation_service = BundleValidationService()
 
 # Use the shared workspace client from tools.py instead of creating a duplicate
 workspace_client = shared_workspace_client
@@ -148,6 +150,106 @@ def _generate_analysis_summary(analysis: dict) -> dict:
     return summary
 
 
+def _load_context_file(file_path: Path) -> str:
+    """Load a DAB context file and return its content"""
+    try:
+        if file_path.exists():
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            logger.debug(f"Loaded context file: {file_path} ({len(content)} chars)")
+            return content
+        else:
+            logger.warning(f"Context file not found: {file_path}")
+            return f"# Context file not found: {file_path}\nContext content not available."
+    except Exception as e:
+        logger.error(f"Error loading context file {file_path}: {e}")
+        return f"# Error loading context file: {file_path}\nError: {str(e)}"
+
+
+def _load_all_context_files() -> dict:
+    """Load all DAB generation context files"""
+    # Get context directory relative to this file
+    context_dir = Path(__file__).parent.parent / "context"
+    
+    context_files = {
+        "dab_patterns": "DAB_PATTERNS.md",
+        "cluster_configs": "CLUSTER_CONFIGS.md",
+        "best_practices": "BEST_PRACTICES.md"
+    }
+    
+    context = {}
+    for key, filename in context_files.items():
+        file_path = context_dir / filename
+        content = _load_context_file(file_path)
+        context[key] = content
+        
+    logger.info(f"Loaded {len(context)} context files from {context_dir}")
+    return context
+
+
+def _generate_validation_recommendations(validation_result: dict) -> dict:
+    """Generate actionable recommendations based on validation results"""
+    recommendations = {
+        "immediate_actions": [],
+        "improvements": [],
+        "next_steps": []
+    }
+    
+    errors = validation_result.get("errors", [])
+    warnings = validation_result.get("warnings", [])
+    best_practices = validation_result.get("best_practices", {})
+    security_checks = validation_result.get("security_checks", {})
+    
+    # Immediate actions for errors
+    if errors:
+        recommendations["immediate_actions"].extend([
+            "Fix configuration errors before deployment",
+            "Validate YAML syntax and required fields"
+        ])
+    
+    # Improvements based on best practices score
+    score = best_practices.get("score", 0)
+    if score < 80:
+        recommendations["improvements"].extend([
+            "Review best practices suggestions to improve configuration quality",
+            "Add missing monitoring and error handling configurations"
+        ])
+    
+    if score < 60:
+        recommendations["improvements"].append(
+            "Consider significant refactoring to align with DAB best practices"
+        )
+    
+    # Security improvements
+    if not security_checks.get("passed", False):
+        recommendations["immediate_actions"].extend([
+            "Address security issues before deploying to production",
+            "Review secret management and access control configurations"
+        ])
+    
+    # Next steps based on validation state
+    if validation_result.get("validation_passed", False):
+        recommendations["next_steps"].extend([
+            "Bundle is ready for deployment",
+            "Run 'databricks bundle validate' to confirm with Databricks CLI",
+            "Consider testing in development environment first"
+        ])
+    else:
+        recommendations["next_steps"].extend([
+            "Fix all errors listed in validation results", 
+            "Re-run validation after making corrections",
+            "Test bundle configuration with 'databricks bundle validate'"
+        ])
+    
+    # Add warning-based recommendations
+    if warnings:
+        recommendations["improvements"].append(
+            "Review warnings for potential optimizations and improvements"
+        )
+    
+    return recommendations
+
+
 @mcp.tool()
 async def generate_bundle(
     bundle_name: str = types.Field(description="Name for the Databricks Asset Bundle"),
@@ -174,8 +276,18 @@ async def generate_bundle(
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
+        # Load all context files for Claude
+        logger.info("Loading DAB context files for generation")
+        context_content = _load_all_context_files()
+        
         # If analysis_results not provided, analyze the notebooks
-        combined_analysis = analysis_results or {}
+        # Handle case where analysis_results might be a FieldInfo object
+        if analysis_results is None or hasattr(analysis_results, 'default'):
+            combined_analysis = {}
+        elif isinstance(analysis_results, dict):
+            combined_analysis = analysis_results
+        else:
+            combined_analysis = {}
         
         if notebook_paths and not analysis_results:
             logger.info(f"Analysis not provided, analyzing {len(notebook_paths)} notebooks")
@@ -230,54 +342,52 @@ async def generate_bundle(
                 "complex_multi_resource": "Use for multiple resource types or complex dependencies"
             },
             
-            # Context file references
-            "context_files": {
-                "patterns": "/mcp/context/DAB_PATTERNS.md",
-                "cluster_configs": "/mcp/context/CLUSTER_CONFIGS.md", 
-                "best_practices": "/mcp/context/BEST_PRACTICES.md"
-            },
+            # Include full context content for Claude (loaded from files)
+            "dab_patterns_content": context_content.get("dab_patterns", ""),
+            "cluster_configs_content": context_content.get("cluster_configs", ""),
+            "best_practices_content": context_content.get("best_practices", ""),
             
-            # Generation instructions for Claude
+            # Generation instructions for Claude with complete context
             "generation_instructions": f"""
-Generate a complete Databricks Asset Bundle YAML configuration based on the notebook analysis.
+Generate a complete Databricks Asset Bundle YAML configuration based on the notebook analysis and the comprehensive context provided.
 
-CONTEXT: Use the patterns and guidelines from the context files to create an appropriate bundle:
+COMPLETE CONTEXT PROVIDED:
+- DAB patterns, cluster configurations, and best practices are included in this response
+- Use the dab_patterns_content, cluster_configs_content, and best_practices_content fields
+- All context is loaded directly from the documentation files
 
-1. PATTERN SELECTION: Based on the analysis results, select and adapt the most appropriate pattern from DAB_PATTERNS.md:
-   - Check workflow_type from analysis (ETL/ML/streaming/reporting)
-   - Consider dependency complexity and data sources
-   - Look for Databricks-specific features (MLflow, streaming, widgets)
+GENERATION PROCESS:
 
-2. CLUSTER CONFIGURATION: Use CLUSTER_CONFIGS.md guidelines to determine:
-   - Node types based on workload type and data size
-   - Spark configurations for the detected workflow
-   - Environment-appropriate sizing (dev vs prod)
+1. PATTERN SELECTION: Review the DAB patterns content and select the most appropriate pattern based on:
+   - Workflow type from analysis: {combined_analysis.get('patterns', {}).get('workflow_type', 'unknown')}
+   - Dependency complexity and data sources
+   - Detected Databricks features (MLflow, streaming, widgets)
 
-3. BEST PRACTICES: Apply BEST_PRACTICES.md guidelines for:
-   - Proper naming conventions
-   - Security and permissions setup
-   - Environment-specific configurations
-   - Error handling and monitoring
+2. CLUSTER CONFIGURATION: Use cluster configs content to determine:
+   - Node types appropriate for the workload size and complexity
+   - Spark configurations optimized for the detected workflow
+   - Environment-specific sizing ({target_environment} environment)
 
-4. CUSTOMIZATION: Adapt the selected pattern based on analysis findings:
-   - Include actual dependencies found in notebooks
-   - Set up Unity Catalog resources for detected tables
-   - Add appropriate parameters from widget analysis
-   - Configure schedules based on workflow type
+3. BEST PRACTICES: Apply all best practices from the content including:
+   - Proper naming conventions for all resources
+   - Security and permissions configuration
+   - Environment-specific settings and variables
+   - Monitoring, error handling, and retry policies
 
-5. STRUCTURE: Create a complete bundle with:
-   - bundle metadata with descriptive name
-   - variables section with environment-specific settings
-   - resources section with job definitions
-   - targets section for dev/staging/prod environments
-   - proper task dependencies and cluster configurations
+4. CUSTOMIZATION: Adapt based on analysis findings:
+   - Include dependencies: {list(combined_analysis.get('dependencies', {}).keys()) if combined_analysis else 'None provided'}
+   - Configure data sources: {list(combined_analysis.get('data_sources', {}).keys()) if combined_analysis else 'None provided'}
+   - Add detected parameters and widgets
+   - Set appropriate scheduling based on workflow type
 
-OUTPUT: Generate a complete, valid databricks.yml file that can be deployed immediately.
-The configuration should be production-ready and follow all best practices.
+OUTPUT REQUIREMENTS:
+- Complete, valid databricks.yml that can be deployed immediately
+- Production-ready configuration following all best practices
+- Properly structured with bundle, variables, resources, and targets sections
+- Environment-appropriate configurations for: {target_environment}
 
 Bundle Name: {bundle_name}
 Target Environment: {target_environment}
-Analysis Summary: {str(combined_analysis)[:500]}...
 """,
             
             # Ready status
@@ -300,11 +410,15 @@ Analysis Summary: {str(combined_analysis)[:500]}...
             "bundle_directory": generation_context["bundle_directory"],
             "request_type": generation_context["request_type"],
             "pattern_selection_guidance": generation_context["pattern_selection_guidance"],
-            "context_files": generation_context["context_files"],
             "generation_instructions": generation_context["generation_instructions"],
             "status": generation_context["status"],
             "next_steps": generation_context["next_steps"],
-            "analysis_summary": str(combined_analysis)[:1000] + "..." if combined_analysis else "No analysis provided"
+            "analysis_summary": str(combined_analysis)[:1000] + "..." if combined_analysis else "No analysis provided",
+            
+            # Include full context content for Claude
+            "dab_patterns_content": generation_context["dab_patterns_content"],
+            "cluster_configs_content": generation_context["cluster_configs_content"], 
+            "best_practices_content": generation_context["best_practices_content"]
         }
         
         return create_success_response({
@@ -328,19 +442,55 @@ async def validate_bundle(
     """
     Validate a Databricks Asset Bundle configuration for correctness and best practices.
     
-    Performs checks including:
-    - YAML schema validation
-    - Resource reference validation
-    - Best practice compliance
-    - Security policy checks
-    - Target configuration validation
+    Performs comprehensive validation including:
+    - YAML schema validation against DAB requirements
+    - Resource reference validation (jobs, clusters, notebooks)
+    - Best practice compliance using established guidelines
+    - Security policy checks for production readiness
+    - Target-specific configuration validation
+    - Naming convention validation
+    
+    Returns detailed validation results with errors, warnings, and actionable suggestions
+    for improving the bundle configuration.
     """
     try:
-        # Placeholder for validate_bundle implementation
-        return create_error_response("validate_bundle tool is not yet implemented. Coming in next iteration.")
+        logger.info(f"Validating bundle at: {bundle_path} for target: {target}")
+        
+        # Use validation service to perform comprehensive checks
+        validation_result = await validation_service.validate_bundle(
+            bundle_path=bundle_path,
+            target=target,
+            check_best_practices=check_best_practices,
+            check_security=check_security
+        )
+        
+        # Enhanced response formatting
+        response = {
+            "validation_passed": validation_result["validation_passed"],
+            "bundle_path": validation_result.get("config_path", bundle_path),
+            "target_environment": validation_result.get("target", target),
+            "validation_summary": {
+                "total_errors": len(validation_result.get("errors", [])),
+                "total_warnings": len(validation_result.get("warnings", [])),
+                "best_practices_score": validation_result.get("best_practices", {}).get("score", 0),
+                "security_passed": validation_result.get("security_checks", {}).get("passed", False)
+            },
+            "errors": validation_result.get("errors", []),
+            "warnings": validation_result.get("warnings", []),
+            "best_practices": validation_result.get("best_practices", {}),
+            "security_checks": validation_result.get("security_checks", {}),
+            "recommendations": _generate_validation_recommendations(validation_result)
+        }
+        
+        if response["validation_passed"]:
+            logger.info(f"Bundle validation passed for {bundle_path}")
+        else:
+            logger.warning(f"Bundle validation failed with {len(response['errors'])} errors")
+        
+        return create_success_response(response)
         
     except Exception as e:
-        logger.error(f"Error in validate_bundle: {e}")
+        logger.error(f"Error in validate_bundle: {e}", exc_info=True)
         return create_error_response(f"Bundle validation failed: {str(e)}")
 
 
