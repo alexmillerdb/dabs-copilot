@@ -151,30 +151,171 @@ def _generate_analysis_summary(analysis: dict) -> dict:
 @mcp.tool()
 async def generate_bundle(
     bundle_name: str = types.Field(description="Name for the Databricks Asset Bundle"),
-    resources: list[str] = types.Field(description="List of notebook/job paths to include in bundle"),
+    analysis_results: Optional[dict] = types.Field(default=None, description="Results from analyze_notebook tool (JSON object)"),
+    notebook_paths: Optional[list[str]] = types.Field(default=None, description="List of notebook paths to analyze and include"),
     target_environment: str = types.Field(default="dev", description="Target environment (dev/staging/prod)"),
-    include_tests: bool = types.Field(default=False, description="Generate test configurations"),
-    output_path: Optional[str] = types.Field(default=None, description="Optional: Where to save bundle files locally")
+    output_path: Optional[str] = types.Field(default=None, description="Where to save bundle files (defaults to temp directory)")
 ) -> str:
     """
-    Generate a complete Databricks Asset Bundle configuration from analyzed resources.
-    Creates databricks.yml and resource definitions based on notebook analysis.
+    Generate a Databricks Asset Bundle using Claude's intelligence and DAB patterns.
     
-    This tool will:
-    1. Analyze each resource if not already analyzed
-    2. Generate appropriate job/pipeline configurations
-    3. Create databricks.yml with targets and resources
-    4. Optionally generate test configurations
-    5. Return bundle configuration or save to specified path
+    This tool leverages Claude Code's understanding of DAB patterns from context files to generate
+    appropriate configurations. It uses notebook analysis results to determine the best pattern
+    and configuration for the specific workflow.
+    
+    Context files referenced:
+    - /context/DAB_PATTERNS.md - Common bundle patterns and selection guidelines
+    - /context/CLUSTER_CONFIGS.md - Cluster sizing and configuration guidelines  
+    - /context/BEST_PRACTICES.md - DAB best practices and security guidelines
+    
+    The tool prepares comprehensive context for Claude to generate the optimal YAML configuration.
     """
     try:
-        # Placeholder for generate_bundle implementation
-        # This will be implemented after analyze_notebook is tested
-        return create_error_response("generate_bundle tool is not yet implemented. Coming in next iteration.")
+        if not workspace_client:
+            return create_error_response("Databricks client not initialized")
+        
+        # If analysis_results not provided, analyze the notebooks
+        combined_analysis = analysis_results or {}
+        
+        if notebook_paths and not analysis_results:
+            logger.info(f"Analysis not provided, analyzing {len(notebook_paths)} notebooks")
+            combined_analysis = {
+                "analyzed_notebooks": [],
+                "combined_patterns": {},
+                "combined_dependencies": {},
+                "combined_data_sources": {}
+            }
+            
+            # Analyze each notebook
+            for notebook_path in notebook_paths:
+                try:
+                    # Call analyze_notebook for each path
+                    analysis_result = analysis_service.analyze_file(
+                        file_path=notebook_path,
+                        content=None,  # Will be fetched by the service
+                        file_type=None,
+                        include_dependencies=True,
+                        include_data_sources=True,
+                        detect_patterns=True
+                    )
+                    combined_analysis["analyzed_notebooks"].append({
+                        "path": notebook_path,
+                        "analysis": analysis_result
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to analyze {notebook_path}: {e}")
+        
+        # Determine output directory - ensure we have a string value
+        if output_path is not None:
+            bundle_dir = str(output_path)
+        else:
+            bundle_dir = f"/tmp/generated_bundles/{str(bundle_name).replace(' ', '_').lower()}"
+        
+        os.makedirs(bundle_dir, exist_ok=True)
+        
+        # Prepare comprehensive context for Claude Code generation
+        generation_context = {
+            "bundle_name": bundle_name,
+            "target_environment": target_environment,
+            "bundle_directory": bundle_dir,
+            "analysis_data": combined_analysis,
+            "request_type": "databricks_asset_bundle_generation",
+            
+            # Pattern selection guidance
+            "pattern_selection_guidance": {
+                "simple_etl": "Use for single notebook or simple pipelines with basic dependencies",
+                "multi_stage_etl": "Use for multiple notebooks with clear ETL stages and dependencies",
+                "ml_pipeline": "Use when MLflow imports detected or model training workflow identified",
+                "streaming_job": "Use for real-time processing or streaming operations detected",
+                "complex_multi_resource": "Use for multiple resource types or complex dependencies"
+            },
+            
+            # Context file references
+            "context_files": {
+                "patterns": "/mcp/context/DAB_PATTERNS.md",
+                "cluster_configs": "/mcp/context/CLUSTER_CONFIGS.md", 
+                "best_practices": "/mcp/context/BEST_PRACTICES.md"
+            },
+            
+            # Generation instructions for Claude
+            "generation_instructions": f"""
+Generate a complete Databricks Asset Bundle YAML configuration based on the notebook analysis.
+
+CONTEXT: Use the patterns and guidelines from the context files to create an appropriate bundle:
+
+1. PATTERN SELECTION: Based on the analysis results, select and adapt the most appropriate pattern from DAB_PATTERNS.md:
+   - Check workflow_type from analysis (ETL/ML/streaming/reporting)
+   - Consider dependency complexity and data sources
+   - Look for Databricks-specific features (MLflow, streaming, widgets)
+
+2. CLUSTER CONFIGURATION: Use CLUSTER_CONFIGS.md guidelines to determine:
+   - Node types based on workload type and data size
+   - Spark configurations for the detected workflow
+   - Environment-appropriate sizing (dev vs prod)
+
+3. BEST PRACTICES: Apply BEST_PRACTICES.md guidelines for:
+   - Proper naming conventions
+   - Security and permissions setup
+   - Environment-specific configurations
+   - Error handling and monitoring
+
+4. CUSTOMIZATION: Adapt the selected pattern based on analysis findings:
+   - Include actual dependencies found in notebooks
+   - Set up Unity Catalog resources for detected tables
+   - Add appropriate parameters from widget analysis
+   - Configure schedules based on workflow type
+
+5. STRUCTURE: Create a complete bundle with:
+   - bundle metadata with descriptive name
+   - variables section with environment-specific settings
+   - resources section with job definitions
+   - targets section for dev/staging/prod environments
+   - proper task dependencies and cluster configurations
+
+OUTPUT: Generate a complete, valid databricks.yml file that can be deployed immediately.
+The configuration should be production-ready and follow all best practices.
+
+Bundle Name: {bundle_name}
+Target Environment: {target_environment}
+Analysis Summary: {str(combined_analysis)[:500]}...
+""",
+            
+            # Ready status
+            "status": "ready_for_generation",
+            "next_steps": [
+                "Claude will analyze the notebook results and context files",
+                "Select the most appropriate DAB pattern", 
+                "Generate customized databricks.yml configuration",
+                "Save the generated bundle to the specified directory",
+                "Validate the configuration if Databricks CLI is available"
+            ]
+        }
+        
+        logger.info(f"Prepared generation context for bundle '{bundle_name}' in {bundle_dir}")
+        
+        # Convert the generation context to ensure JSON serialization
+        serializable_context = {
+            "bundle_name": generation_context["bundle_name"],
+            "target_environment": generation_context["target_environment"], 
+            "bundle_directory": generation_context["bundle_directory"],
+            "request_type": generation_context["request_type"],
+            "pattern_selection_guidance": generation_context["pattern_selection_guidance"],
+            "context_files": generation_context["context_files"],
+            "generation_instructions": generation_context["generation_instructions"],
+            "status": generation_context["status"],
+            "next_steps": generation_context["next_steps"],
+            "analysis_summary": str(combined_analysis)[:1000] + "..." if combined_analysis else "No analysis provided"
+        }
+        
+        return create_success_response({
+            "bundle_generation_context": serializable_context,
+            "message": f"Context prepared for Claude Code to generate DAB. The analysis data and patterns are ready for intelligent YAML generation.",
+            "instructions_for_claude": "Please generate a complete Databricks Asset Bundle YAML based on the analysis results and context patterns provided. Use the pattern selection guidance and best practices to create an optimal configuration."
+        })
         
     except Exception as e:
-        logger.error(f"Error in generate_bundle: {e}")
-        return create_error_response(f"Bundle generation failed: {str(e)}")
+        logger.error(f"Error in generate_bundle: {e}", exc_info=True)
+        return create_error_response(f"Bundle generation preparation failed: {str(e)}")
 
 
 @mcp.tool()
