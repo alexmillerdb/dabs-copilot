@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import jobs, workspace
 from pydantic import Field
@@ -480,5 +480,61 @@ async def generate_bundle_from_job(
     except Exception as e:
         logger.error(f"Error generating bundle from job {job_id}: {e}")
         return create_error_response(f"Failed to generate bundle: {str(e)}")
+
+@mcp.tool()
+async def get_cluster(cluster_id: str = Field(description="The cluster ID to fetch configuration for")) -> str:
+    """Get cluster configuration by ID for use in job cluster generation"""
+    try:
+        if not workspace_client:
+            return create_error_response("Databricks client not initialized")
+        
+        # Get cluster info
+        cluster = workspace_client.clusters.get(cluster_id=cluster_id)
+        
+        # Extract key configuration for job cluster generation
+        config = {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster.cluster_name,
+            "spark_version": cluster.spark_version,
+            "node_type_id": cluster.node_type_id,
+            "driver_node_type_id": cluster.driver_node_type_id,
+            "num_workers": cluster.num_workers,
+            "autotermination_minutes": cluster.autotermination_minutes,
+            "spark_conf": dict(cluster.spark_conf) if cluster.spark_conf else {},
+            "spark_env_vars": dict(cluster.spark_env_vars) if cluster.spark_env_vars else {},
+            "enable_elastic_disk": cluster.enable_elastic_disk,
+            "disk_spec": cluster.disk_spec.dict() if cluster.disk_spec else None,
+            "cluster_log_conf": cluster.cluster_log_conf.dict() if cluster.cluster_log_conf else None,
+            "init_scripts": [script.dict() for script in cluster.init_scripts] if cluster.init_scripts else [],
+            "custom_tags": dict(cluster.custom_tags) if cluster.custom_tags else {},
+            "cluster_source": cluster.cluster_source.value if cluster.cluster_source else None,
+            "state": cluster.state.value if cluster.state else None
+        }
+        
+        # Generate job cluster YAML snippet for easy copy-paste
+        job_cluster_yaml = f"""job_clusters:
+  - job_cluster_key: main_cluster
+    new_cluster:
+      spark_version: "{cluster.spark_version}"
+      node_type_id: "{cluster.node_type_id}"
+      num_workers: {cluster.num_workers or 0}"""
+        
+        if cluster.autotermination_minutes:
+            job_cluster_yaml += f"\n      autotermination_minutes: {cluster.autotermination_minutes}"
+        
+        if cluster.spark_conf:
+            job_cluster_yaml += "\n      spark_conf:"
+            for key, value in cluster.spark_conf.items():
+                job_cluster_yaml += f'\n        {key}: "{value}"'
+        
+        return create_success_response({
+            "cluster_config": config,
+            "job_cluster_yaml": job_cluster_yaml,
+            "message": f"Retrieved configuration for cluster {cluster_id} ({cluster.cluster_name})"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting cluster {cluster_id}: {e}")
+        return create_error_response(f"Failed to get cluster {cluster_id}: {str(e)}")
 
 logger.info(f"Databricks MCP tools loaded successfully")

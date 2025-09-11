@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -47,25 +47,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create MCP server
-mcp_server = FastMCP(name=servername)
-
-# Load tools (imports from tools.py will register tools with mcp_server)
+# Import the MCP server instance from tools.py (same as main.py uses)
 try:
-    import tools
-    logger.info("MCP tools loaded successfully")
+    # Import tools modules with proper path
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    
+    from tools import mcp as mcp_server
+    # Also import DAB tools to register them
+    import tools_dab
+    logger.info("MCP tools loaded successfully from tools.py")
 except ImportError as e:
     logger.error(f"Failed to load MCP tools: {e}")
+    # Fallback: create new instance
+    mcp_server = FastMCP(name=servername)
 
-# Create MCP ASGI app
-mcp_asgi_app = mcp_server.http_app(path='/')
+# Create MCP ASGI app (using sse_app for Databricks Apps compatibility)
+mcp_asgi_app = mcp_server.sse_app()
 
-# Create FastAPI app with MCP lifespan
+# Create FastAPI app
 app = FastAPI(
     title='Databricks MCP Server',
     version='0.2.0',
     description='MCP server for Databricks workspace operations and DAB generation',
-    lifespan=mcp_asgi_app.lifespan,
 )
 
 # Setup CORS middleware
@@ -82,7 +87,7 @@ app.add_middleware(
 )
 
 # Mount MCP server
-app.mount('/mcp', mcp_asgi_app)
+app.mount('/mcp-server', mcp_asgi_app)
 
 # Health check endpoint
 @app.get("/health")
@@ -98,11 +103,19 @@ async def health():
 @app.get("/mcp-info")
 async def mcp_info():
     """MCP server information"""
+    tools_count = 0
+    tool_names = []
+    
+    if hasattr(mcp_server, '_tool_manager'):
+        tools_count = len(mcp_server._tool_manager._tools)
+        tool_names = [tool.name for tool in mcp_server._tool_manager._tools.values()]
+    
     return {
         "server_name": servername,
-        "tools_count": len(mcp_server._tools) if hasattr(mcp_server, '_tools') else 0,
+        "tools_count": tools_count,
+        "tool_names": tool_names,
         "environment": os.getenv("ENVIRONMENT", "dev"),
-        "mcp_endpoint": "/mcp/",
+        "mcp_endpoint": "/mcp-server/mcp",
         "databricks_apps_mode": is_databricks_apps_environment()
     }
 
@@ -113,7 +126,7 @@ async def app_info():
     return {
         "app_name": servername,
         "version": "0.2.0",
-        "mcp_endpoint": "/mcp/",
+        "mcp_endpoint": "/mcp-server/mcp",
         "health_endpoint": "/health",
         "environment": os.getenv("ENVIRONMENT", "dev"),
         "databricks_apps": is_databricks_apps_environment(),
@@ -144,7 +157,7 @@ if __name__ == "__main__":
     
     logger.info(f"Starting server on {host}:{port}")
     logger.info(f"Databricks Apps mode: {is_databricks_apps_environment()}")
-    logger.info(f"MCP endpoint will be available at: /mcp/")
+    logger.info(f"MCP streamable HTTP endpoint will be available at: /mcp-server/mcp")
     
     uvicorn.run(
         "app:app",
