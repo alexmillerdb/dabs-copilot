@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import jobs, workspace
 from pydantic import Field
@@ -391,5 +391,150 @@ async def list_dbfs_files(
     except Exception as e:
         logger.error(f"Error listing DBFS files at {path}: {e}")
         return create_error_response(f"Failed to list DBFS files: {str(e)}")
+
+@mcp.tool()
+async def generate_bundle_from_job(
+    job_id: int = Field(description="The ID of the job to generate a bundle from"),
+    output_dir: Optional[str] = Field(default=None, description="Output directory for the generated bundle (defaults to current directory)")
+) -> str:
+    """Generate a Databricks Asset Bundle from an existing job using the native Databricks CLI command"""
+    import subprocess
+    import tempfile
+    import os
+    
+    try:
+        if not workspace_client:
+            return create_error_response("Databricks client not initialized")
+        
+        # First verify the job exists
+        try:
+            job = workspace_client.jobs.get(job_id=job_id)
+            job_name = job.settings.name
+        except Exception as e:
+            return create_error_response(f"Job {job_id} not found: {str(e)}")
+        
+        # Determine output directory
+        if output_dir:
+            bundle_dir = os.path.abspath(output_dir)
+        else:
+            bundle_dir = tempfile.mkdtemp(prefix=f"dab_{job_id}_")
+        
+        # Ensure directory exists
+        os.makedirs(bundle_dir, exist_ok=True)
+        
+        # Run the databricks bundle generate command
+        cmd = [
+            "databricks", "bundle", "generate", "job",
+            "--existing-job-id", str(job_id)
+        ]
+        
+        # Add profile if configured
+        profile = os.getenv("DATABRICKS_CONFIG_PROFILE")
+        if profile:
+            cmd.extend(["--profile", profile])
+        
+        logger.info(f"Running command: {' '.join(cmd)} in directory {bundle_dir}")
+        
+        result = subprocess.run(
+            cmd,
+            cwd=bundle_dir,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            return create_error_response(f"Failed to generate bundle: {error_msg}")
+        
+        # Read the generated bundle.yml file
+        bundle_yml_path = os.path.join(bundle_dir, "databricks.yml")
+        if not os.path.exists(bundle_yml_path):
+            # Try alternative paths
+            bundle_yml_path = os.path.join(bundle_dir, "bundle.yml")
+        
+        bundle_content = None
+        if os.path.exists(bundle_yml_path):
+            with open(bundle_yml_path, 'r') as f:
+                bundle_content = f.read()
+        
+        # List generated files
+        generated_files = []
+        for root, dirs, files in os.walk(bundle_dir):
+            for file in files:
+                rel_path = os.path.relpath(os.path.join(root, file), bundle_dir)
+                generated_files.append(rel_path)
+        
+        return create_success_response({
+            "job_id": job_id,
+            "job_name": job_name,
+            "bundle_dir": bundle_dir,
+            "generated_files": generated_files,
+            "bundle_content": bundle_content,
+            "command_output": result.stdout,
+            "message": f"Successfully generated DAB from job {job_id} in {bundle_dir}"
+        })
+        
+    except subprocess.TimeoutExpired:
+        return create_error_response("Bundle generation timed out after 30 seconds")
+    except Exception as e:
+        logger.error(f"Error generating bundle from job {job_id}: {e}")
+        return create_error_response(f"Failed to generate bundle: {str(e)}")
+
+@mcp.tool()
+async def get_cluster(cluster_id: str = Field(description="The cluster ID to fetch configuration for")) -> str:
+    """Get cluster configuration by ID for use in job cluster generation"""
+    try:
+        if not workspace_client:
+            return create_error_response("Databricks client not initialized")
+        
+        # Get cluster info
+        cluster = workspace_client.clusters.get(cluster_id=cluster_id)
+        
+        # Extract key configuration for job cluster generation
+        config = {
+            "cluster_id": cluster_id,
+            "cluster_name": cluster.cluster_name,
+            "spark_version": cluster.spark_version,
+            "node_type_id": cluster.node_type_id,
+            "driver_node_type_id": cluster.driver_node_type_id,
+            "num_workers": cluster.num_workers,
+            "autotermination_minutes": cluster.autotermination_minutes,
+            "spark_conf": dict(cluster.spark_conf) if cluster.spark_conf else {},
+            "spark_env_vars": dict(cluster.spark_env_vars) if cluster.spark_env_vars else {},
+            "enable_elastic_disk": cluster.enable_elastic_disk,
+            "disk_spec": cluster.disk_spec.dict() if cluster.disk_spec else None,
+            "cluster_log_conf": cluster.cluster_log_conf.dict() if cluster.cluster_log_conf else None,
+            "init_scripts": [script.dict() for script in cluster.init_scripts] if cluster.init_scripts else [],
+            "custom_tags": dict(cluster.custom_tags) if cluster.custom_tags else {},
+            "cluster_source": cluster.cluster_source.value if cluster.cluster_source else None,
+            "state": cluster.state.value if cluster.state else None
+        }
+        
+        # Generate job cluster YAML snippet for easy copy-paste
+        job_cluster_yaml = f"""job_clusters:
+  - job_cluster_key: main_cluster
+    new_cluster:
+      spark_version: "{cluster.spark_version}"
+      node_type_id: "{cluster.node_type_id}"
+      num_workers: {cluster.num_workers or 0}"""
+        
+        if cluster.autotermination_minutes:
+            job_cluster_yaml += f"\n      autotermination_minutes: {cluster.autotermination_minutes}"
+        
+        if cluster.spark_conf:
+            job_cluster_yaml += "\n      spark_conf:"
+            for key, value in cluster.spark_conf.items():
+                job_cluster_yaml += f'\n        {key}: "{value}"'
+        
+        return create_success_response({
+            "cluster_config": config,
+            "job_cluster_yaml": job_cluster_yaml,
+            "message": f"Retrieved configuration for cluster {cluster_id} ({cluster.cluster_name})"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting cluster {cluster_id}: {e}")
+        return create_error_response(f"Failed to get cluster {cluster_id}: {str(e)}")
 
 logger.info(f"Databricks MCP tools loaded successfully")

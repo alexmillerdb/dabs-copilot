@@ -160,10 +160,10 @@ databricks bundle run mcp-my-custom-server
 The API endpoint format:
 
 ```
-https://your-app-url.databricksapps.com/mcp/
+https://your-app-url.databricksapps.com/mcp-server/mcp
 ```
 
-*Keep the `/mcp/` path and trailing slash for compatibility.*
+*The MCP server is mounted at `/mcp-server` and serves the MCP protocol at the `/mcp` subpath using streamable HTTP transport for Databricks Apps compatibility.*
 
 **Authentication:** Use the Bearer token from your Databricks profile.
 
@@ -181,7 +181,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 databricks_cli_profile = "DEFAULT"
 workspace_client = WorkspaceClient(profile=databricks_cli_profile)
-mcp_server_url = "https://your-app-url.databricksapps.com/mcp/"
+mcp_server_url = "https://your-app-url.databricksapps.com/mcp-server/mcp"
 
 async def test_connection_to_server():
 async with streamablehttp_client(

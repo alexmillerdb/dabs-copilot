@@ -6,23 +6,124 @@ set -e
 # Load environment variables from .env file if it exists
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MCP_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$MCP_ROOT")"
 
-# Check for .env file in MCP root directory
-if [ -f "$MCP_ROOT/.env" ]; then
-    echo "📄 Loading environment variables from .env file..."
-    set -a  # automatically export all variables
-    source "$MCP_ROOT/.env"
-    set +a  # disable automatic export
-fi
+# Function to load and validate .env file
+load_env_file() {
+    local env_file="$PROJECT_ROOT/.env"
+    
+    if [ -f "$env_file" ]; then
+        echo "📄 Found .env file at: $env_file"
+        echo "📄 Loading environment variables from .env file..."
+        
+        # Show file size and modification time for debugging
+        if [ "${DEBUG_ENV:-}" = "true" ]; then
+            echo "🐛 Debug: .env file details:"
+            ls -la "$env_file" | sed 's/^/   /'
+            echo "🐛 Debug: .env file contents (with values hidden):"
+            sed 's/=.*/=***/' "$env_file" | sed 's/^/   /'
+        fi
+        
+        # Validate .env file format before sourcing
+        if ! grep -q "^[A-Z_][A-Z0-9_]*=" "$env_file" 2>/dev/null; then
+            echo "⚠️  Warning: .env file exists but appears to be empty or malformed"
+            echo "   Expected format: VARIABLE_NAME=value"
+            if [ "${DEBUG_ENV:-}" = "true" ]; then
+                echo "🐛 Debug: Raw file contents:"
+                cat "$env_file" | sed 's/^/   /'
+            fi
+        fi
+        
+        # Show what we're about to load (without values for security)
+        echo "🔍 Environment variables found in .env:"
+        grep -E "^[A-Z_][A-Z0-9_]*=" "$env_file" | cut -d'=' -f1 | sed 's/^/   - /' || echo "   (none found)"
+        
+        # Store current values for comparison
+        if [ "${DEBUG_ENV:-}" = "true" ]; then
+            OLD_APP_NAME="${DATABRICKS_APP_NAME:-}"
+            OLD_PROFILE="${DATABRICKS_CONFIG_PROFILE:-}"
+            OLD_HOST="${DATABRICKS_HOST:-}"
+        fi
+        
+        set -a  # automatically export all variables
+        source "$env_file"
+        set +a  # disable automatic export
+        
+        # Show what changed if debug is enabled
+        if [ "${DEBUG_ENV:-}" = "true" ]; then
+            echo "🐛 Debug: Environment variable changes:"
+            [ "$OLD_APP_NAME" != "${DATABRICKS_APP_NAME:-}" ] && echo "   DATABRICKS_APP_NAME: '$OLD_APP_NAME' -> '${DATABRICKS_APP_NAME:-}'"
+            [ "$OLD_PROFILE" != "${DATABRICKS_CONFIG_PROFILE:-}" ] && echo "   DATABRICKS_CONFIG_PROFILE: '$OLD_PROFILE' -> '${DATABRICKS_CONFIG_PROFILE:-}'"
+            [ "$OLD_HOST" != "${DATABRICKS_HOST:-}" ] && echo "   DATABRICKS_HOST: '$OLD_HOST' -> '${DATABRICKS_HOST:-}'"
+        fi
+        
+        echo "✅ Environment variables loaded successfully"
+    else
+        echo "📄 No .env file found at: $env_file"
+        echo "   (.env should be in the project root directory, not the MCP subdirectory)"
+        echo "   You can create one to set custom environment variables"
+        echo "   Expected variables: DATABRICKS_APP_NAME, DATABRICKS_CONFIG_PROFILE, DATABRICKS_HOST"
+    fi
+}
+
+# Function to create .env file from template if it doesn't exist
+create_env_if_missing() {
+    local env_file="$PROJECT_ROOT/.env"
+    local env_example="$PROJECT_ROOT/env.example"
+    local mcp_env_example="$MCP_ROOT/env.example"
+    
+    # Check for template in project root first, then MCP directory
+    local template_file=""
+    if [ -f "$env_example" ]; then
+        template_file="$env_example"
+    elif [ -f "$mcp_env_example" ]; then
+        template_file="$mcp_env_example"
+        echo "📋 Found template in MCP directory, will copy to project root"
+    fi
+    
+    if [ ! -f "$env_file" ] && [ -n "$template_file" ]; then
+        echo "🤔 Would you like to create a .env file from the template? (y/N)"
+        echo "   Template: $template_file"
+        echo "   Target: $env_file"
+        if [ "${AUTO_CREATE_ENV:-}" = "true" ]; then
+            echo "   AUTO_CREATE_ENV=true, creating .env file automatically..."
+            cp "$template_file" "$env_file"
+            echo "✅ Created .env file from template. Please edit it with your values."
+            echo "   Edit: $env_file"
+        else
+            echo "   Run with AUTO_CREATE_ENV=true to create automatically, or:"
+            echo "   cp $template_file $env_file"
+        fi
+    elif [ ! -f "$env_file" ]; then
+        echo "📄 No .env file or template found"
+        echo "   Expected .env location: $env_file"
+        echo "   You can create one manually with these variables:"
+        echo "   DATABRICKS_APP_NAME, DATABRICKS_CONFIG_PROFILE, DATABRICKS_HOST"
+    fi
+}
+
+# Create .env if missing and load environment variables
+create_env_if_missing
+load_env_file
 
 # Configuration with environment variable support
 APP_NAME=${DATABRICKS_APP_NAME:-"databricks-mcp-server"}
 PROFILE=${DATABRICKS_CONFIG_PROFILE:-"DEFAULT"}
 DATABRICKS_HOST=${DATABRICKS_HOST:-""}
 
+# Debug: Show final configuration values
+echo ""
+echo "🔧 Final Configuration:"
+echo "   APP_NAME: $APP_NAME ${DATABRICKS_APP_NAME:+(from env)}"
+echo "   PROFILE: $PROFILE ${DATABRICKS_CONFIG_PROFILE:+(from env)}"
+echo "   DATABRICKS_HOST: ${DATABRICKS_HOST:-"(not set)"} ${DATABRICKS_HOST:+(from env)}"
+
 # Validate required environment variables
 if [ -z "$DATABRICKS_HOST" ]; then
     echo "⚠️  Warning: DATABRICKS_HOST not set. Make sure your profile is configured correctly."
+    echo "   To fix this, either:"
+    echo "   1. Add DATABRICKS_HOST=your-workspace-url to your .env file"
+    echo "   2. Configure your Databricks CLI profile with: databricks configure --profile $PROFILE"
 fi
 
 # Function to find the best Databricks CLI
@@ -55,6 +156,7 @@ echo "🚀 Deploying MCP Server to Databricks Apps..."
 echo "📱 App Name: $APP_NAME"
 echo "👤 Profile: $PROFILE"
 echo "🌐 Host: ${DATABRICKS_HOST:-"(using profile default)"}"
+echo "📁 Project Root: $PROJECT_ROOT"
 echo "📁 MCP Root: $MCP_ROOT"
 
 # Ensure we're in the MCP directory

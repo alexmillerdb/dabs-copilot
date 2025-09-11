@@ -1,374 +1,219 @@
 # Databricks MCP Server
 
-A Model Context Protocol (MCP) server for Databricks workspace operations and Databricks Asset Bundle (DAB) generation. This server provides tools for analyzing notebooks, managing jobs, executing SQL queries, and generating production-ready DABs.
-
-## 🏗️ Code Structure
-
-```
-mcp/
-├── README.md                    # This file
-├── server/                      # MCP server implementation
-│   ├── main.py                 # MCP server entry point
-│   ├── tools.py                # MCP tool definitions (9 tools)
-│   ├── app.py                  # FastAPI + FastMCP hybrid app
-│   ├── config.yaml             # Server configuration
-│   ├── services/               # Business logic layer
-│   │   ├── __init__.py
-│   │   └── databricks_service.py
-│   └── config/                 # Configuration management
-│       ├── __init__.py
-│       └── loader.py
-├── tests/                       # Test suite
-│   ├── __init__.py
-│   └── test_tools.py           # Tool testing script
-├── IMPLEMENTATION_PLAN.md       # 3-phase implementation roadmap
-├── ARCHITECTURE_DESIGN.md       # Detailed system architecture
-├── TOOLS_SPECIFICATION.md       # Complete tool specifications
-├── CONFIG_ERROR_HANDLING.md     # Configuration and error handling
-└── IMPLEMENTATION_SUMMARY.md    # Planning phase summary
-```
-
-## 🛠️ Available MCP Tools
-
-The server provides 9 MCP tools for Databricks operations:
-
-### Core Workspace Tools
-- **`health`** - Check server and Databricks connection status
-- **`list_jobs`** - List workspace jobs with filtering options
-- **`get_job`** - Get detailed job configuration and task information
-- **`run_job`** - Execute jobs with parameter support
-- **`list_notebooks`** - Browse notebooks in workspace paths
-- **`export_notebook`** - Export notebooks in various formats (SOURCE, HTML, JUPYTER, DBC)
-
-### SQL & Data Tools
-- **`execute_dbsql`** - Execute SQL queries on Databricks SQL warehouses
-- **`list_warehouses`** - List available SQL warehouses
-- **`list_dbfs_files`** - Browse Databricks File System (DBFS)
+A production-ready Model Context Protocol (MCP) server for Databricks workspace operations and DAB generation. Provides 15 tools for managing jobs, notebooks, SQL queries, and generating Databricks Asset Bundles.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-
-1. **Databricks Configuration**: Ensure you have Databricks CLI configured with a profile:
+1. **Databricks CLI configured**:
    ```bash
    databricks configure --profile aws-apps
    ```
 
-2. **Environment Variables**: The server uses your existing `.env` file with:
+2. **Environment variables** (.env file):
    ```bash
    DATABRICKS_CONFIG_PROFILE=aws-apps
    DATABRICKS_HOST=https://your-workspace.cloud.databricks.com/
+   DATABRICKS_SERVERLESS_COMPUTE_ID=auto  # Optional for serverless
    ```
 
-3. **Dependencies**: Install from the root requirements.txt:
+3. **Install dependencies**:
    ```bash
-   cd /Users/alex.miller/Documents/GitHub/dabs-copilot
    pip install -r requirements.txt
    ```
 
-### Running the MCP Server
+### Running the Server
 
-#### Option 1: Direct MCP Server (for Claude Code CLI)
+#### Option 1: Claude Code CLI Integration
 ```bash
+# Start MCP server
 cd mcp/server
 python main.py
+
+# Register with Claude (one-time)
+claude mcp add --scope user databricks-mcp python /path/to/mcp/server/main.py
 ```
 
-This starts the MCP server in stdio mode, perfect for connecting with Claude Code CLI.
+#### Option 2: Databricks Apps (Deployed) ✅
+```bash
+# Deploy to Databricks Apps
+cd mcp && ./scripts/deploy.sh
 
-#### Option 2: FastAPI + MCP Hybrid Server
+# Access deployed server
+URL: https://databricks-mcp-server-1444828305810485.aws.databricksapps.com
+```
+
+#### Option 3: Local FastAPI Server
 ```bash
 cd mcp/server
-python app.py
+python app.py  # Runs on http://localhost:8000
 ```
 
-This starts both FastAPI (port 8000) and MCP server for web UI integration.
+## 🛠️ Available Tools (15 Total)
 
-### Testing the Server
+### Core Workspace Tools (9)
+| Tool | Description |
+|------|-------------|
+| `health` | Check server and Databricks connection |
+| `list_jobs` | List workspace jobs with filtering |
+| `get_job` | Get detailed job configuration |
+| `run_job` | Execute jobs with parameters |
+| `list_notebooks` | Browse workspace notebooks |
+| `export_notebook` | Export notebooks (SOURCE, HTML, JUPYTER, DBC) |
+| `execute_dbsql` | Execute SQL queries |
+| `list_warehouses` | List SQL warehouses |
+| `list_dbfs_files` | Browse DBFS |
 
-Run the test suite to verify all tools work:
+### DAB Generation Tools (6)
+| Tool | Description |
+|------|-------------|
+| `analyze_notebook` | Deep analysis for dependencies and patterns |
+| `generate_bundle` | Create DAB configurations |
+| `generate_bundle_from_job` | Generate DAB from existing jobs |
+| `validate_bundle` | Validate bundle configurations |
+| `create_tests` | Generate test scaffolds |
+| `get_cluster` | Get cluster configurations |
 
+## 📦 DAB Generation Examples
+
+### Generate from Existing Job
+```bash
+# Via Claude
+"List my Databricks jobs"
+"Generate a bundle from job ID 123"
+
+# Direct tool call
+await mcp.call_tool("generate_bundle_from_job", {"job_id": 123})
+```
+
+### Generate from Notebook Analysis
+```bash
+# Via Claude
+"Analyze notebook at /Users/example/etl_pipeline.py"
+"Generate a DAB from the analysis"
+
+# Direct tool call
+await mcp.call_tool("analyze_notebook", {
+    "notebook_path": "/Users/example/etl.py",
+    "include_dependencies": true,
+    "detect_patterns": true
+})
+```
+
+### Example DAB Output
+```yaml
+bundle:
+  name: etl-pipeline
+  
+resources:
+  jobs:
+    etl_job:
+      tasks:
+        - task_key: extract
+        - task_key: transform
+        - task_key: load
+      
+targets:
+  dev:
+    mode: development
+  prod:
+    mode: production
+```
+
+## 🔧 Configuration
+
+### Project Structure
+```
+mcp/
+├── server/
+│   ├── main.py          # Claude Code CLI entry
+│   ├── app.py           # FastAPI server
+│   ├── tools.py         # Core tools
+│   └── tools_dab.py     # DAB tools
+├── scripts/
+│   └── deploy.sh        # Deployment script
+└── requirements.txt     # Dependencies
+```
+
+### Key Configuration Files
+- **app.yaml** - Databricks Apps entry point
+- **config.yaml** - Server configuration
+- **.env** - Environment variables
+
+## 🧪 Testing
+
+### Test All Tools
 ```bash
 cd mcp/tests
 python test_tools.py
 ```
 
-Expected output:
-```
-Testing Databricks MCP tools...
-Testing health tool...
-Health result: {"success": true, "data": {"server_status": "healthy", ...}}
-
-Testing list_jobs tool...
-List jobs result: {"success": true, "data": {"jobs": [...], "count": 5}}
-
-Testing list_notebooks tool...
-List notebooks result: {"success": true, "data": {"notebooks": [], "count": 0}}
-
-✅ All tests completed!
-```
-
-## 🔧 Configuration
-
-### Server Configuration (`config.yaml`)
-
-The server uses a YAML configuration file with environment variable substitution:
-
-```yaml
-servername: "databricks-mcp-server"
-server:
-  host: "localhost"
-  port: 8000
-  debug: false
-
-databricks:
-  host: "${DATABRICKS_HOST}"
-  token: "${DATABRICKS_TOKEN}"
-  warehouse_id: "${DATABRICKS_WAREHOUSE_ID}"
-
-tools:
-  enabled:
-    - health
-    - list_jobs
-    - get_job
-    # ... all 9 tools
-```
-
-### Environment Variables
-
-The server automatically detects and uses these environment variables:
-
+### Test Deployed Server
 ```bash
-# Databricks connection (from your existing .env)
-DATABRICKS_CONFIG_PROFILE=aws-apps
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com/
-DATABRICKS_SERVERLESS_COMPUTE_ID=auto
+# Get auth token
+TOKEN=$(databricks auth token --profile aws-apps | jq -r .access_token)
 
-# Optional overrides
-DATABRICKS_TOKEN=your-token          # If not using profile
-DATABRICKS_WAREHOUSE_ID=your-warehouse-id
-ENVIRONMENT=development              # dev, staging, prod
+# Test endpoints
+curl -H "Authorization: Bearer $TOKEN" \
+     https://databricks-mcp-server-1444828305810485.aws.databricksapps.com/health
+
+curl -H "Authorization: Bearer $TOKEN" \
+     https://databricks-mcp-server-1444828305810485.aws.databricksapps.com/mcp-info
 ```
 
-## 🧪 Testing Individual Tools
+## 📊 Response Format
 
-You can test specific tools directly:
-
-```python
-import asyncio
-from tools import mcp
-
-async def test_health():
-    result = await mcp.call_tool("health", {})
-    print(result)
-
-async def test_list_jobs():
-    result = await mcp.call_tool("list_jobs", {"limit": 3})
-    print(result)
-
-# Run tests
-asyncio.run(test_health())
-asyncio.run(test_list_jobs())
-```
-
-## 📊 Tool Response Format
-
-All tools return standardized JSON responses:
-
+All tools return standardized JSON:
 ```json
 {
   "success": true,
   "data": {
     // Tool-specific data
   },
-  "timestamp": "2025-09-03T21:23:15.495658"
+  "timestamp": "2025-09-11T03:38:00Z"
 }
 ```
 
-Error responses:
-```json
-{
-  "success": false,
-  "error": "Error description",
-  "timestamp": "2025-09-03T21:23:15.495658"
-}
-```
+## 🚢 Deployment to Databricks Apps
 
-## 🔄 Integration with Claude Code CLI
+The server is deployed and accessible at:
+- **URL**: https://databricks-mcp-server-1444828305810485.aws.databricksapps.com
+- **Health**: `/health`
+- **MCP Info**: `/mcp-info`
+- **MCP Endpoint**: `/mcp-server/mcp`
 
-To connect the MCP server with Claude Code CLI:
-
-1. **Add the MCP server to Claude:**
-   ```bash
-   claude mcp add --scope user databricks-mcp python mcp/server/main.py
-   ```
-
-2. **Test tools via Claude:**
-   ```
-   "Check the health of my Databricks connection"
-   "List the first 5 jobs in my workspace"
-   "Export the notebook at /Users/alex.miller/example.py"
-   ```
-
-3. **Generate DABs from notebooks:**
-   ```
-   "Export notebook at /Users/alex.miller@databricks.com/genai-business-agent/agents/driver"
-   "Create DAB generation and output as test_dab.yaml"
-   ```
-
-The MCP server will automatically start when Claude needs to use the tools.
-
-## 📦 DAB Generation Example
-
-The MCP server can analyze exported notebooks and generate comprehensive Databricks Asset Bundles (DABs). Here's how:
-
-### Quick Start for DAB Generation
-
-1. **Export a notebook using MCP tools:**
-   ```python
-   # Via Claude: "Export notebook at /path/to/your/notebook"
-   # Or directly with the tool:
-   await mcp.call_tool("export_notebook", {
-     "path": "/Users/alex.miller@databricks.com/genai-business-agent/agents/driver",
-     "format": "SOURCE"
-   })
-   ```
-
-2. **Generate a DAB from the exported notebook:**
-   Claude will analyze the notebook and create a complete bundle configuration including:
-   - Job definitions with task dependencies
-   - Cluster configurations
-   - Unity Catalog resources (models, functions, schemas)
-   - Environment-specific settings (dev, staging, prod)
-   - Schedule configurations
-   - Permission management
-
-### Example Generated DAB Structure
-
-```yaml
-bundle:
-  name: genai-business-agent
-  description: Tool-calling agent for analyzing GenAI consumption patterns
-
-resources:
-  jobs:
-    genai_agent_deployment:
-      tasks:
-        - task_key: setup_environment
-        - task_key: create_uc_tools
-        - task_key: train_agent
-        - task_key: evaluate_agent
-        - task_key: deploy_agent
-      
-  models:
-    genai_consumption_agent:
-      catalog_name: ${var.catalog}
-      schema_name: ${var.schema}
-      
-  schemas:
-    genai_functions:
-      functions:
-        - name: get_genai_consumption_growth
-        - name: get_genai_consumption_data_daily
-
-targets:
-  dev:
-    mode: development
-    default: true
-  staging:
-    mode: development
-  prod:
-    mode: production
-```
-
-### Deploy the Generated DAB
-
+### Authentication
+All endpoints require OAuth authentication:
 ```bash
-# Validate the generated bundle
-databricks bundle validate
-
-# Deploy to development
-databricks bundle deploy --target dev
-
-# Run the job
-databricks bundle run genai_agent_deployment --target dev
+databricks auth token --profile aws-apps
 ```
 
-### What Gets Generated
-
-The DAB generator creates:
-- **Multi-task workflows** with proper dependencies
-- **Job clusters** with appropriate Spark configurations
-- **Unity Catalog resources** (models, functions, schemas)
-- **Vector search indexes** for RAG applications
-- **Environment configurations** for dev/staging/prod
-- **Quality monitoring** and inference logging
-- **Permission sets** for team collaboration
-- **Scheduled jobs** for data pipelines
-
-The generated DAB follows Databricks best practices and is production-ready.
-
-## 🚧 Development Status
-
-### ✅ Phase 1 Complete (Week 2)
-- [x] Hybrid FastAPI + FastMCP architecture
-- [x] 9 core tools implemented with error handling
-- [x] YAML configuration system
-- [x] Service layer abstraction
-- [x] Databricks SDK integration with profile support
-- [x] Comprehensive testing suite
-
-### 🚀 Phase 2 (Week 2-3) - DAB Generation
-- [x] DAB generation from notebook exports (demonstrated)
-- [ ] `analyze_notebook` - Deep notebook analysis tool
-- [ ] `generate_bundle` - Automated DAB creation tool
-- [ ] `validate_bundle` - Bundle validation tool
-- [ ] `create_tests` - Test scaffold generation tool
-
-### 🔮 Phase 3 (Week 3-4) - Production Features
-- [ ] FastAPI routes for web UI
-- [ ] Authentication and security
-- [ ] Real-time features (WebSocket)
-- [ ] Production deployment configuration
-
-## 📚 Documentation
-
-- **[IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)** - Complete 3-phase roadmap
-- **[ARCHITECTURE_DESIGN.md](./ARCHITECTURE_DESIGN.md)** - System architecture details
-- **[TOOLS_SPECIFICATION.md](./TOOLS_SPECIFICATION.md)** - All 20+ planned tools
-- **[CONFIG_ERROR_HANDLING.md](./CONFIG_ERROR_HANDLING.md)** - Configuration patterns
+### Logs
+View logs at: https://databricks-mcp-server-1444828305810485.aws.databricksapps.com/logz
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+| Issue | Solution |
+|-------|----------|
+| "Databricks client not initialized" | Check `~/.databrickscfg` and `DATABRICKS_CONFIG_PROFILE` |
+| "No warehouse ID provided" | Set `DATABRICKS_WAREHOUSE_ID` or use `DATABRICKS_SERVERLESS_COMPUTE_ID=auto` |
+| FastMCP import error | Ensure `pip install -r requirements.txt` completed |
+| Authentication required | Use `databricks auth token` for Bearer token |
 
-1. **"Databricks client not initialized"**
-   - Check your `~/.databrickscfg` profile configuration
-   - Verify `DATABRICKS_CONFIG_PROFILE` environment variable
+## 📈 Status
 
-2. **"No warehouse ID provided"**
-   - Set `DATABRICKS_WAREHOUSE_ID` environment variable
-   - Or use `DATABRICKS_SERVERLESS_COMPUTE_ID=auto` for serverless
-
-3. **Import errors**
-   - Run `pip install -r requirements.txt` from project root
-   - Ensure you're in the correct virtual environment
-
-### Debug Mode
-
-Enable debug logging:
-```bash
-export LOG_LEVEL=DEBUG
-cd mcp/server
-python main.py
-```
+- ✅ **15 tools operational** across 2 phases
+- ✅ **Deployed to Databricks Apps** with OAuth
+- ✅ **Claude Code CLI integrated**
+- ✅ **Sub-3 second response times**
+- ✅ **Production-ready** with error handling
 
 ## 🤝 Contributing
 
-The MCP server follows these development patterns:
-- **Simple, clean code** following the reference implementation
-- **Standardized error handling** with success/error response format
-- **Environment-based configuration** for flexible deployment
-- **Comprehensive testing** before adding new features
+Follow these patterns:
+- Standardized JSON responses
+- Profile-based authentication
+- Environment-based configuration
+- Comprehensive error handling
 
-Next steps: Ready for Phase 2 DAB generation tools or integration with Claude Code CLI!
+For detailed implementation guide, see [CLAUDE.md](./CLAUDE.md)

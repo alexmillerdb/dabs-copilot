@@ -1,15 +1,36 @@
 #!/usr/bin/env python3
 """
-Simple MCP server runner for testing with Claude Code CLI
+Databricks MCP Server - Main entry point for Claude Code CLI
+Combines Phase 1 (core tools) and Phase 2 (DAB generation) tools
 """
 
 import asyncio
+import logging
 from tools import mcp
 
+# Import DAB tools to register them with the MCP server
+# This adds analyze_notebook, generate_bundle, validate_bundle, create_tests
+import tools_dab
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 async def main():
-    """Run MCP server"""
-    print("Starting Databricks MCP server...")
-    print("Tools available:", len(mcp._tool_manager._tools))
+    """Run MCP server with all available tools"""
+    tool_count = len(mcp._tool_manager._tools)
+    logger.info(f"Starting Databricks MCP server with {tool_count} tools")
+    
+    # List available tools for debugging
+    tool_names = [tool.name for tool in mcp._tool_manager._tools.values()]
+    logger.info(f"Available tools: {', '.join(tool_names)}")
+    
+    print(f"Databricks MCP Server started with {tool_count} tools")
+    print("Ready for Claude Code CLI connections...")
+    
     await mcp.run_stdio_async()
 
 if __name__ == "__main__":
