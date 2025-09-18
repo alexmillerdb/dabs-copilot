@@ -16,46 +16,26 @@ from databricks.sdk.service import jobs, workspace
 from pydantic import Field
 from dotenv import load_dotenv
 
+# Import the new factory
+from workspace_factory import get_or_create_client
+
 # Load environment variables
 load_dotenv()
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
-# Initialize Databricks client
-workspace_client = None
-
-def init_databricks_client():
-    """Initialize Databricks workspace client"""
-    global workspace_client
-    try:
-        # Try to use profile from environment first (your existing setup)
-        profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps")
-        host = os.getenv("DATABRICKS_HOST")
-        token = os.getenv("DATABRICKS_TOKEN")
-        
-        if profile:
-            # Use the profile-based configuration (your existing setup)
-            workspace_client = WorkspaceClient(profile=profile)
-            logger.info(f"Connected to Databricks using profile: {profile}")
-        elif host and token:
-            # Fall back to host/token
-            workspace_client = WorkspaceClient(host=host, token=token)
-            logger.info(f"Connected to Databricks workspace: {host}")
-        else:
-            # Use default profile
-            workspace_client = WorkspaceClient()
-            logger.info("Connected to Databricks using default profile")
-            
-    except Exception as e:
-        logger.error(f"Failed to initialize Databricks client: {e}")
-        workspace_client = None
-
-# Initialize client on import
-init_databricks_client()
-
 # Create MCP server instance - this will be imported by app.py
 mcp = FastMCP("databricks-mcp-server")
+
+# For backward compatibility - other modules import workspace_client from here
+# This will be lazy-initialized on first use
+def get_workspace_client():
+    """Get workspace client (for backward compatibility)"""
+    return get_or_create_client()
+
+# Expose as workspace_client for modules that import it
+workspace_client = None  # Will be set by modules when needed
 
 def create_success_response(data: Any) -> str:
     """Create standardized success response"""
@@ -77,6 +57,7 @@ def create_error_response(error: str) -> str:
 async def health() -> str:
     """Check server and Databricks connection health"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -104,6 +85,7 @@ async def list_jobs(
 ) -> str:
     """List all jobs in the Databricks workspace"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -140,6 +122,7 @@ async def list_jobs(
 async def get_job(job_id: int = Field(description="The ID of the job to retrieve")) -> str:
     """Get detailed configuration for a specific job"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -189,6 +172,7 @@ async def run_job(
 ) -> str:
     """Execute a job in the Databricks workspace"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -215,6 +199,7 @@ async def list_notebooks(
 ) -> str:
     """List notebooks in a Databricks workspace path"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -259,6 +244,7 @@ async def export_notebook(
 ) -> str:
     """Export a notebook from the Databricks workspace"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -303,6 +289,7 @@ async def execute_dbsql(
 ) -> str:
     """Execute SQL query on Databricks SQL warehouse"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -340,6 +327,7 @@ async def execute_dbsql(
 async def list_warehouses() -> str:
     """List available SQL warehouses"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -368,6 +356,7 @@ async def list_dbfs_files(
 ) -> str:
     """List files in Databricks File System"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -403,6 +392,7 @@ async def generate_bundle_from_job(
     import os
     
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
@@ -485,6 +475,7 @@ async def generate_bundle_from_job(
 async def get_cluster(cluster_id: str = Field(description="The cluster ID to fetch configuration for")) -> str:
     """Get cluster configuration by ID for use in job cluster generation"""
     try:
+        workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
         
