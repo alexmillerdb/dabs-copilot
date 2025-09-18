@@ -49,7 +49,7 @@ cd mcp/server
 python app.py  # Runs on http://localhost:8000
 ```
 
-## 🛠️ Available Tools (15 Total)
+## 🛠️ Available Tools (18 Total)
 
 ### Core Workspace Tools (9)
 | Tool | Description |
@@ -73,6 +73,13 @@ python app.py  # Runs on http://localhost:8000
 | `validate_bundle` | Validate bundle configurations |
 | `create_tests` | Generate test scaffolds |
 | `get_cluster` | Get cluster configurations |
+
+### Workspace Upload Tools (3)
+| Tool | Description |
+|------|-------------|
+| `upload_bundle` | Upload generated bundle to workspace |
+| `run_bundle_command` | Execute bundle CLI commands (validate, deploy) |
+| `sync_workspace_to_local` | Download bundle from workspace to local |
 
 ## 📦 DAB Generation Examples
 
@@ -98,6 +105,20 @@ await mcp.call_tool("analyze_notebook", {
     "include_dependencies": true,
     "detect_patterns": true
 })
+```
+
+### Complete Workflow: Generate & Deploy
+```bash
+# Via Claude - Full workflow
+"Analyze my ETL notebook and generate a DAB"
+"Upload the bundle to my workspace"
+"Validate and deploy to dev environment"
+
+# The workflow:
+1. analyze_notebook → Extract patterns
+2. generate_bundle → Create DAB YAML
+3. upload_bundle → Upload to workspace
+4. run_bundle_command → Validate/deploy
 ```
 
 ### Example DAB Output
@@ -202,11 +223,11 @@ View logs at: https://databricks-mcp-server-1444828305810485.aws.databricksapps.
 
 ## 📈 Status
 
-- ✅ **15 tools operational** across 2 phases
+- ✅ **18 tools operational** across 3 phases
 - ✅ **Deployed to Databricks Apps** with OAuth
 - ✅ **Claude Code CLI integrated**
 - ✅ **Sub-3 second response times**
-- ✅ **Production-ready** with error handling
+- ✅ **Complete DAB lifecycle** from generation to deployment
 
 ## 🤝 Contributing
 

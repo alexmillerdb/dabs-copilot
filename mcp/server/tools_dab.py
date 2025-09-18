@@ -18,7 +18,8 @@ from databricks.sdk.service import workspace
 from services.analysis_service import NotebookAnalysisService
 from services.validation_service import BundleValidationService
 # Import shared utilities from tools.py
-from tools import mcp, create_success_response, create_error_response, workspace_client as shared_workspace_client
+from tools import mcp, create_success_response, create_error_response
+from workspace_factory import get_or_create_client
 
 # Configure logging
 logging.basicConfig(
@@ -31,95 +32,103 @@ logger = logging.getLogger(__name__)
 analysis_service = NotebookAnalysisService()
 validation_service = BundleValidationService()
 
-# Use the shared workspace client from tools.py instead of creating a duplicate
-workspace_client = shared_workspace_client
-
 
 @mcp.tool()
 async def analyze_notebook(
-    notebook_path: str = types.Field(description="Path to notebook or file in Databricks workspace or local filesystem"),
-    include_dependencies: bool = types.Field(default=True, description="Extract imports, libraries, and notebook dependencies"),
-    include_data_sources: bool = types.Field(default=True, description="Extract table references and file paths"),
-    detect_patterns: bool = types.Field(default=True, description="Identify workflow patterns (ETL/ML/reporting)")
+    notebook_path: str = types.Field(description="Path to notebook or file in Databricks workspace or local filesystem")
 ) -> str:
     """
-    Analyze a Databricks notebook or Python/SQL file to extract patterns, dependencies, 
-    and generate DAB configuration recommendations. Supports .py files, .sql files, 
-    and Databricks notebooks with magic commands.
+    Analyze a notebook/Python/SQL file to extract basic info needed for DAB generation.
     
-    Returns detailed analysis including:
-    - Databricks-specific features (widgets, spark operations, MLflow)
-    - Dependencies (Python imports, notebook calls)
-    - Data sources (Unity Catalog tables, DBFS paths)
-    - Workflow patterns (ETL, ML, reporting)
-    - DAB configuration recommendations
+    Returns:
+    - File type (python/sql/notebook)
+    - Python libraries used (for cluster dependencies)
+    - Basic workflow type (etl/ml/reporting)
+    - Parameters/widgets found
     """
     try:
-        if not workspace_client:
-            return create_error_response("Databricks client not initialized. Check connection settings.")
+        logger.info(f"Analyzing file: {notebook_path}")
         
-        logger.info(f"Analyzing notebook/file: {notebook_path}")
-        
-        # Determine if path is local or workspace
-        is_local = os.path.exists(notebook_path)
-        
-        if is_local:
-            # Read local file
-            logger.info(f"Reading local file: {notebook_path}")
+        # Get file content
+        if os.path.exists(notebook_path):
             with open(notebook_path, 'r') as f:
                 content = f.read()
-            file_path = notebook_path
         else:
-            # Export from Databricks workspace
-            logger.info(f"Exporting notebook from workspace: {notebook_path}")
-            try:
-                notebook_export = workspace_client.workspace.export(
-                    path=notebook_path,
-                    format=workspace.ExportFormat.SOURCE
-                )
-                
-                if not notebook_export or not notebook_export.content:
-                    return create_error_response(f"Notebook not found or empty: {notebook_path}")
-                
-                # Decode base64 content
-                import base64
-                content = base64.b64decode(notebook_export.content).decode('utf-8')
-                file_path = notebook_path
-                
-            except Exception as e:
-                logger.error(f"Failed to export notebook: {e}")
-                return create_error_response(f"Could not export notebook: {str(e)}")
+            # Export from workspace
+            workspace_client = get_or_create_client()
+            if not workspace_client:
+                return create_error_response("Databricks client not initialized")
+            
+            notebook_export = workspace_client.workspace.export(
+                path=notebook_path,
+                format=workspace.ExportFormat.SOURCE
+            )
+            
+            if not notebook_export or not notebook_export.content:
+                return create_error_response(f"File not found: {notebook_path}")
+            
+            import base64
+            content = base64.b64decode(notebook_export.content).decode('utf-8')
         
-        # Analyze the content
-        logger.info(f"Performing analysis with deps={include_dependencies}, data={include_data_sources}, patterns={detect_patterns}")
+        # Simple analysis - extract key info
+        analysis = _simple_analyze(content, notebook_path)
         
-        analysis_result = analysis_service.analyze_file(
-            file_path=file_path,
-            content=content,
-            file_type=None,  # Auto-detect
-            include_dependencies=include_dependencies,
-            include_data_sources=include_data_sources,
-            detect_patterns=detect_patterns
-        )
-        
-        # Format the response
-        response = {
-            "notebook_info": analysis_result.get("file_info", {}),
-            "databricks_features": analysis_result.get("databricks_features", {}),
-            "dependencies": analysis_result.get("dependencies", {}),
-            "data_sources": analysis_result.get("data_sources", {}),
-            "patterns": analysis_result.get("patterns", {}),
-            "parameters": analysis_result.get("parameters", {}),
-            "recommendations": analysis_result.get("recommendations", {}),
-            "analysis_summary": _generate_analysis_summary(analysis_result)
-        }
-        
-        logger.info(f"Analysis completed successfully for: {notebook_path}")
-        return create_success_response(response)
+        logger.info(f"Analysis completed for: {notebook_path}")
+        return create_success_response(analysis)
         
     except Exception as e:
-        logger.error(f"Error in analyze_notebook: {e}", exc_info=True)
+        logger.error(f"Error analyzing {notebook_path}: {e}")
         return create_error_response(f"Analysis failed: {str(e)}")
+
+
+def _simple_analyze(content: str, file_path: str) -> dict:
+    """Simple analysis to extract basics for DAB generation"""
+    import re
+    
+    # Determine file type
+    if file_path.endswith('.sql'):
+        file_type = 'sql'
+    elif file_path.endswith('.py') or 'python' in content.lower():
+        file_type = 'python'
+    else:
+        file_type = 'notebook'
+    
+    # Extract Python imports/libraries
+    libraries = []
+    import_pattern = r'(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    imports = re.findall(import_pattern, content)
+    
+    # Filter to common data/ML libraries
+    common_libs = ['pandas', 'numpy', 'sklearn', 'tensorflow', 'torch', 'mlflow', 
+                   'pyspark', 'databricks', 'matplotlib', 'seaborn', 'scipy']
+    
+    for imp in imports:
+        if imp in common_libs or any(lib in imp for lib in common_libs):
+            if imp not in libraries:
+                libraries.append(imp)
+    
+    # Detect workflow type (simple heuristics)
+    workflow_type = 'etl'  # default
+    if 'mlflow' in content.lower() or 'model' in content.lower():
+        workflow_type = 'ml'
+    elif 'display(' in content or 'plot' in content.lower():
+        workflow_type = 'reporting'
+    
+    # Find widgets/parameters
+    widgets = []
+    widget_pattern = r'dbutils\.widgets\.\w+\(["\']([^"\']+)["\']'
+    widget_matches = re.findall(widget_pattern, content)
+    widgets.extend(widget_matches)
+    
+    return {
+        "file_path": file_path,
+        "file_type": file_type,
+        "libraries": libraries,
+        "workflow_type": workflow_type,
+        "widgets": widgets,
+        "uses_spark": 'spark' in content.lower(),
+        "uses_mlflow": 'mlflow' in content.lower()
+    }
 
 
 def _generate_analysis_summary(analysis: dict) -> dict:
@@ -253,242 +262,156 @@ def _generate_validation_recommendations(validation_result: dict) -> dict:
 @mcp.tool()
 async def generate_bundle(
     bundle_name: str = types.Field(description="Name for the Databricks Asset Bundle"),
-    analysis_results: Optional[dict] = types.Field(default=None, description="Results from analyze_notebook tool (JSON object)"),
-    notebook_paths: Optional[list[str]] = types.Field(default=None, description="List of notebook paths to analyze and include"),
-    target_environment: str = types.Field(default="dev", description="Target environment (dev/staging/prod)"),
-    output_path: Optional[str] = types.Field(default=None, description="Where to save bundle files (defaults to temp directory)")
+    file_paths: list[str] = types.Field(description="List of notebook/Python/SQL file paths to include"),
+    output_path: Optional[str] = types.Field(default=None, description="Where to save bundle files (defaults to current directory)")
 ) -> str:
     """
-    Generate a Databricks Asset Bundle using Claude's intelligence and DAB patterns.
+    Prepare context for Claude Code to generate a Databricks Asset Bundle.
     
-    This tool leverages Claude Code's understanding of DAB patterns from context files to generate
-    appropriate configurations. It uses notebook analysis results to determine the best pattern
-    and configuration for the specific workflow.
-    
-    Context files referenced:
-    - /context/DAB_PATTERNS.md - Common bundle patterns and selection guidelines
-    - /context/CLUSTER_CONFIGS.md - Cluster sizing and configuration guidelines  
-    - /context/BEST_PRACTICES.md - DAB best practices and security guidelines
-    
-    The tool prepares comprehensive context for Claude to generate the optimal YAML configuration.
+    This tool analyzes the provided files and loads DAB patterns from /mcp/context/ 
+    to give Claude Code everything needed to intelligently generate a databricks.yml.
     """
     try:
-        if not workspace_client:
-            return create_error_response("Databricks client not initialized")
+        logger.info(f"Preparing bundle generation context for '{bundle_name}' with {len(file_paths)} files")
         
-        # Load all context files for Claude
-        logger.info("Loading DAB context files for generation")
+        # Set output directory
+        if output_path is None:
+            output_path = f"./{bundle_name}"
+        
+        os.makedirs(output_path, exist_ok=True)
+        
+        # Analyze each file
+        file_analyses = []
+        for file_path in file_paths:
+            try:
+                analysis_result = await analyze_notebook(file_path)
+                import json
+                analysis = json.loads(analysis_result)
+                
+                if analysis.get("success"):
+                    file_analyses.append({
+                        "path": file_path,
+                        "analysis": analysis["data"]
+                    })
+                else:
+                    file_analyses.append({
+                        "path": file_path,
+                        "analysis": {"error": "Could not analyze file"}
+                    })
+            except Exception as e:
+                logger.warning(f"Could not analyze {file_path}: {e}")
+                file_analyses.append({
+                    "path": file_path,
+                    "analysis": {"error": str(e)}
+                })
+        
+        # Load context files for Claude
         context_content = _load_all_context_files()
         
-        # If analysis_results not provided, analyze the notebooks
-        # Handle case where analysis_results might be a FieldInfo object
-        if analysis_results is None or hasattr(analysis_results, 'default'):
-            combined_analysis = {}
-        elif isinstance(analysis_results, dict):
-            combined_analysis = analysis_results
-        else:
-            combined_analysis = {}
-        
-        if notebook_paths and not analysis_results:
-            logger.info(f"Analysis not provided, analyzing {len(notebook_paths)} notebooks")
-            combined_analysis = {
-                "analyzed_notebooks": [],
-                "combined_patterns": {},
-                "combined_dependencies": {},
-                "combined_data_sources": {}
-            }
-            
-            # Analyze each notebook
-            for notebook_path in notebook_paths:
-                try:
-                    # Call analyze_notebook for each path
-                    analysis_result = analysis_service.analyze_file(
-                        file_path=notebook_path,
-                        content=None,  # Will be fetched by the service
-                        file_type=None,
-                        include_dependencies=True,
-                        include_data_sources=True,
-                        detect_patterns=True
-                    )
-                    combined_analysis["analyzed_notebooks"].append({
-                        "path": notebook_path,
-                        "analysis": analysis_result
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to analyze {notebook_path}: {e}")
-        
-        # Determine output directory - ensure we have a string value
-        if output_path is not None:
-            bundle_dir = str(output_path)
-        else:
-            bundle_dir = f"/tmp/generated_bundles/{str(bundle_name).replace(' ', '_').lower()}"
-        
-        os.makedirs(bundle_dir, exist_ok=True)
-        
-        # Prepare comprehensive context for Claude Code generation
-        generation_context = {
+        # Prepare the response with everything Claude needs
+        response = {
             "bundle_name": bundle_name,
-            "target_environment": target_environment,
-            "bundle_directory": bundle_dir,
-            "analysis_data": combined_analysis,
-            "request_type": "databricks_asset_bundle_generation",
-            
-            # Pattern selection guidance
-            "pattern_selection_guidance": {
-                "simple_etl": "Use for single notebook or simple pipelines with basic dependencies",
-                "multi_stage_etl": "Use for multiple notebooks with clear ETL stages and dependencies",
-                "ml_pipeline": "Use when MLflow imports detected or model training workflow identified",
-                "streaming_job": "Use for real-time processing or streaming operations detected",
-                "complex_multi_resource": "Use for multiple resource types or complex dependencies"
+            "output_path": output_path,
+            "file_analyses": file_analyses,
+            "context_files": {
+                "dab_patterns": context_content.get("dab_patterns", ""),
+                "cluster_configs": context_content.get("cluster_configs", ""),
+                "best_practices": context_content.get("best_practices", "")
             },
-            
-            # Include full context content for Claude (loaded from files)
-            "dab_patterns_content": context_content.get("dab_patterns", ""),
-            "cluster_configs_content": context_content.get("cluster_configs", ""),
-            "best_practices_content": context_content.get("best_practices", ""),
-            
-            # Generation instructions for Claude with complete context
-            "generation_instructions": f"""
-Generate a complete Databricks Asset Bundle YAML configuration based on the notebook analysis and the comprehensive context provided.
+            "workspace_host": get_or_create_client().config.host if get_or_create_client() else "https://your-workspace.cloud.databricks.com",
+            "instructions": f"""
+Please generate a complete databricks.yml file for the bundle '{bundle_name}' using the analysis and context provided.
 
-COMPLETE CONTEXT PROVIDED:
-- DAB patterns, cluster configurations, and best practices are included in this response
-- Use the dab_patterns_content, cluster_configs_content, and best_practices_content fields
-- All context is loaded directly from the documentation files
+ANALYSIS DATA:
+{len(file_analyses)} files analyzed with dependencies, workflow types, and features detected.
 
-GENERATION PROCESS:
+CONTEXT PROVIDED:
+- DAB patterns and templates from /mcp/context/DAB_PATTERNS.md
+- Cluster configuration guidance from /mcp/context/CLUSTER_CONFIGS.md  
+- Best practices from /mcp/context/BEST_PRACTICES.md
 
-1. PATTERN SELECTION: Review the DAB patterns content and select the most appropriate pattern based on:
-   - Workflow type from analysis: {combined_analysis.get('patterns', {}).get('workflow_type', 'unknown')}
-   - Dependency complexity and data sources
-   - Detected Databricks features (MLflow, streaming, widgets)
+INSTRUCTIONS:
+1. Use the file analyses to determine workflow type and dependencies
+2. Select appropriate DAB pattern from the context
+3. Configure cluster based on detected libraries and workflow
+4. Create a complete, valid databricks.yml file
+5. Save it to {output_path}/databricks.yml
 
-2. CLUSTER CONFIGURATION: Use cluster configs content to determine:
-   - Node types appropriate for the workload size and complexity
-   - Spark configurations optimized for the detected workflow
-   - Environment-specific sizing ({target_environment} environment)
-
-3. BEST PRACTICES: Apply all best practices from the content including:
-   - Proper naming conventions for all resources
-   - Security and permissions configuration
-   - Environment-specific settings and variables
-   - Monitoring, error handling, and retry policies
-
-4. CUSTOMIZATION: Adapt based on analysis findings:
-   - Include dependencies: {list(combined_analysis.get('dependencies', {}).keys()) if combined_analysis else 'None provided'}
-   - Configure data sources: {list(combined_analysis.get('data_sources', {}).keys()) if combined_analysis else 'None provided'}
-   - Add detected parameters and widgets
-   - Set appropriate scheduling based on workflow type
-
-OUTPUT REQUIREMENTS:
-- Complete, valid databricks.yml that can be deployed immediately
-- Production-ready configuration following all best practices
-- Properly structured with bundle, variables, resources, and targets sections
-- Environment-appropriate configurations for: {target_environment}
-
-Bundle Name: {bundle_name}
-Target Environment: {target_environment}
-""",
-            
-            # Ready status
-            "status": "ready_for_generation",
-            "next_steps": [
-                "Claude will analyze the notebook results and context files",
-                "Select the most appropriate DAB pattern", 
-                "Generate customized databricks.yml configuration",
-                "Save the generated bundle to the specified directory",
-                "Validate the configuration if Databricks CLI is available"
-            ]
+The generated bundle should be production-ready and follow all best practices from the context files.
+            """
         }
         
-        logger.info(f"Prepared generation context for bundle '{bundle_name}' in {bundle_dir}")
-        
-        # Convert the generation context to ensure JSON serialization
-        serializable_context = {
-            "bundle_name": generation_context["bundle_name"],
-            "target_environment": generation_context["target_environment"], 
-            "bundle_directory": generation_context["bundle_directory"],
-            "request_type": generation_context["request_type"],
-            "pattern_selection_guidance": generation_context["pattern_selection_guidance"],
-            "generation_instructions": generation_context["generation_instructions"],
-            "status": generation_context["status"],
-            "next_steps": generation_context["next_steps"],
-            "analysis_summary": str(combined_analysis)[:1000] + "..." if combined_analysis else "No analysis provided",
-            
-            # Include full context content for Claude
-            "dab_patterns_content": generation_context["dab_patterns_content"],
-            "cluster_configs_content": generation_context["cluster_configs_content"], 
-            "best_practices_content": generation_context["best_practices_content"]
-        }
-        
-        return create_success_response({
-            "bundle_generation_context": serializable_context,
-            "message": f"Context prepared for Claude Code to generate DAB. The analysis data and patterns are ready for intelligent YAML generation.",
-            "instructions_for_claude": "Please generate a complete Databricks Asset Bundle YAML based on the analysis results and context patterns provided. Use the pattern selection guidance and best practices to create an optimal configuration."
-        })
+        logger.info(f"Context prepared for Claude Code generation of bundle '{bundle_name}'")
+        return create_success_response(response)
         
     except Exception as e:
-        logger.error(f"Error in generate_bundle: {e}", exc_info=True)
-        return create_error_response(f"Bundle generation preparation failed: {str(e)}")
+        logger.error(f"Error preparing bundle context: {e}", exc_info=True)
+        return create_error_response(f"Bundle context preparation failed: {str(e)}")
 
 
 @mcp.tool()
 async def validate_bundle(
     bundle_path: str = types.Field(description="Path to bundle root directory or databricks.yml file"),
-    target: str = types.Field(default="dev", description="Target environment to validate"),
-    check_best_practices: bool = types.Field(default=True, description="Apply best practice validation rules"),
-    check_security: bool = types.Field(default=True, description="Perform security policy validation")
+    target: str = types.Field(default="dev", description="Target environment to validate")
 ) -> str:
     """
-    Validate a Databricks Asset Bundle configuration for correctness and best practices.
+    Validate a Databricks Asset Bundle using the native Databricks CLI.
     
-    Performs comprehensive validation including:
-    - YAML schema validation against DAB requirements
-    - Resource reference validation (jobs, clusters, notebooks)
-    - Best practice compliance using established guidelines
-    - Security policy checks for production readiness
-    - Target-specific configuration validation
-    - Naming convention validation
-    
-    Returns detailed validation results with errors, warnings, and actionable suggestions
-    for improving the bundle configuration.
+    Simply runs 'databricks bundle validate' to check if the bundle configuration is valid.
     """
     try:
+        import subprocess
+        import os
+        
         logger.info(f"Validating bundle at: {bundle_path} for target: {target}")
         
-        # Use validation service to perform comprehensive checks
-        validation_result = await validation_service.validate_bundle(
-            bundle_path=bundle_path,
-            target=target,
-            check_best_practices=check_best_practices,
-            check_security=check_security
+        # Change to bundle directory if it's a directory, otherwise use parent directory
+        if os.path.isdir(bundle_path):
+            working_dir = bundle_path
+        else:
+            working_dir = os.path.dirname(bundle_path)
+        
+        # Run databricks bundle validate
+        cmd = ["databricks", "bundle", "validate", "-t", target]
+        
+        # Get the configured profile from environment or use default
+        profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps")
+        cmd.extend(["--profile", profile])
+        
+        logger.info(f"Running command: {' '.join(cmd)} in {working_dir}")
+        
+        result = subprocess.run(
+            cmd,
+            cwd=working_dir,
+            capture_output=True,
+            text=True,
+            timeout=60
         )
         
-        # Enhanced response formatting
+        # Parse the result
+        validation_passed = result.returncode == 0
+        
         response = {
-            "validation_passed": validation_result["validation_passed"],
-            "bundle_path": validation_result.get("config_path", bundle_path),
-            "target_environment": validation_result.get("target", target),
-            "validation_summary": {
-                "total_errors": len(validation_result.get("errors", [])),
-                "total_warnings": len(validation_result.get("warnings", [])),
-                "best_practices_score": validation_result.get("best_practices", {}).get("score", 0),
-                "security_passed": validation_result.get("security_checks", {}).get("passed", False)
-            },
-            "errors": validation_result.get("errors", []),
-            "warnings": validation_result.get("warnings", []),
-            "best_practices": validation_result.get("best_practices", {}),
-            "security_checks": validation_result.get("security_checks", {}),
-            "recommendations": _generate_validation_recommendations(validation_result)
+            "validation_passed": validation_passed,
+            "bundle_path": bundle_path,
+            "target_environment": target,
+            "command": " ".join(cmd),
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip() if result.stderr else None,
+            "return_code": result.returncode
         }
         
-        if response["validation_passed"]:
+        if validation_passed:
             logger.info(f"Bundle validation passed for {bundle_path}")
         else:
-            logger.warning(f"Bundle validation failed with {len(response['errors'])} errors")
+            logger.warning(f"Bundle validation failed with return code {result.returncode}")
         
         return create_success_response(response)
         
+    except subprocess.TimeoutExpired:
+        return create_error_response("Bundle validation timed out after 60 seconds")
+    except FileNotFoundError:
+        return create_error_response("Databricks CLI not found. Please install databricks CLI.")
     except Exception as e:
         logger.error(f"Error in validate_bundle: {e}", exc_info=True)
         return create_error_response(f"Bundle validation failed: {str(e)}")

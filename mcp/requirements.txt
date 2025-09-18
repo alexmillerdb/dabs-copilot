@@ -1,10 +1,10 @@
 # Working requirements for Databricks Apps MCP Server
 # Based on successful minimal deployment + MCP functionality
 
-# Core FastAPI (proven to work)
-fastapi==0.115.6
-uvicorn==0.34.0
-pydantic==2.10.4
+# Core FastAPI (updated for compatibility)
+fastapi>=0.116.1
+uvicorn>=0.35.0
+pydantic>=2.11.7
 databricks-sdk==0.65.0
 python-dotenv==1.0.1
 pyyaml>=6.0.1
