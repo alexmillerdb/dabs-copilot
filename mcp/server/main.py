@@ -12,6 +12,10 @@ from tools import mcp
 # This adds analyze_notebook, generate_bundle, validate_bundle, create_tests
 import tools_dab
 
+# Import workspace tools to register them with the MCP server
+# This adds upload_bundle, run_bundle_command, sync_workspace_to_local
+import tools_workspace
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

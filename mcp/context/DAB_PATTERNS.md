@@ -6,6 +6,9 @@
 - **MLflow detected** → ML Pipeline
 - **Streaming operations** → Streaming Job
 
+## Instructions
+- Always create a databricks.yaml at the root folder of the project directory
+
 ## 1. Simple ETL
 ```yaml
 bundle:

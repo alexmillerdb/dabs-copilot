@@ -1,0 +1,122 @@
+# Databricks Asset Bundle - McAfee Vector Search POC
+bundle:
+  name: mcafee-vector-search-poc
+  description: Vector search implementation with async batch processing for McAfee POC
+
+include:
+  - resources/*.yml
+
+variables:
+  # Catalog and schema configuration
+  catalog:
+    description: Unity Catalog for storing data
+    default: users
+  schema:
+    description: Schema for storing tables and views
+    default: alex_miller
+  volume_name:
+    description: Volume name for Ray temporary storage
+    default: ray
+  
+  # Vector search configuration
+  vector_search_endpoint:
+    description: Vector Search endpoint name
+    default: abs_test_temp
+  vector_search_index:
+    description: Vector Search index name
+    default: users.alex_miller.spark_docs_vs_index
+  source_dataset:
+    description: Source dataset with embeddings
+    default: users.alex_miller.spark_docs_gold
+  embedding_dimension:
+    description: Dimension of embeddings
+    default: 1024
+  
+  # Cluster configuration
+  node_type_id:
+    description: Node type for compute clusters
+    default: i3.xlarge
+  spark_version:
+    description: Spark runtime version
+    default: 14.3.x-scala2.12
+  
+  # Serverless configuration
+  serverless_compute_id:
+    description: Serverless compute ID
+    default: auto
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://e2-demo-field-eng.cloud.databricks.com
+      # Use profile from .databrickscfg
+      auth_type: databricks-cli
+      profile: aws-apps
+    
+    variables:
+      catalog: users
+      schema: alex_miller_dev
+      volume_name: ray_dev
+    
+    compute:
+      serverless: ${var.serverless_compute_id}
+    
+    permissions:
+      - level: CAN_VIEW
+        group_name: users
+
+  staging:
+    mode: development
+    workspace:
+      host: https://e2-demo-field-eng.cloud.databricks.com
+      auth_type: databricks-cli
+      profile: aws-apps
+    
+    variables:
+      catalog: users
+      schema: alex_miller_staging
+      volume_name: ray_staging
+    
+    compute:
+      serverless: ${var.serverless_compute_id}
+    
+    permissions:
+      - level: CAN_VIEW
+        group_name: users
+
+  prod:
+    mode: production
+    workspace:
+      host: https://e2-demo-field-eng.cloud.databricks.com
+      auth_type: databricks-cli
+      profile: aws-apps
+    
+    variables:
+      catalog: users
+      schema: alex_miller_prod
+      volume_name: ray_prod
+    
+    compute:
+      serverless: ${var.serverless_compute_id}
+    
+    permissions:
+      - level: CAN_VIEW
+        group_name: users
+
+# Workspace paths
+workspace:
+  root_path: /Workspace/Users/alex.miller@databricks.com/mcafee-bundle-${bundle.target}
+  artifact_path: /Workspace/Users/alex.miller@databricks.com/mcafee-bundle-${bundle.target}/artifacts
+  file_path: /Workspace/Users/alex.miller@databricks.com/mcafee-bundle-${bundle.target}/files
+  state_path: /Workspace/Users/alex.miller@databricks.com/mcafee-bundle-${bundle.target}/state
+
+# Sync configuration
+sync:
+  exclude:
+    - "*.pyc"
+    - "__pycache__"
+    - ".git"
+    - ".venv"
+    - "*.egg-info"

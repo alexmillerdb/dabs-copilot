@@ -8,7 +8,7 @@
 2. **Get Cluster Config**: Ask user for cluster ID or use serverless
    - If cluster ID provided: Fetch cluster config via API
    - If serverless: Use default serverless configuration
-3. **Generate Bundle**: Create DAB with job_clusters based on reference cluster
+3. **Generate Bundle**: Create DAB (databricks.yaml) with job_clusters based on reference cluster
 4. **Validate**: Run bundle validation
 5. **Deploy**: User deploys with `databricks bundle deploy`
 
@@ -42,7 +42,7 @@
 **Steps**:
 1. **Export Pipeline**: Fetch pipeline configuration
 2. **Extract Notebooks**: Identify pipeline notebooks and dependencies
-3. **Generate Bundle**: Create bundle with pipeline resource
+3. **Generate Bundle**: Create bundle with pipeline resource (databricks.yaml)
 4. **Add Serverless**: Use `serverless: true` for DLT pipelines
 5. **Validate & Deploy**
 
@@ -57,7 +57,7 @@
 **Steps**:
 1. **Inventory Resources**: List jobs, pipelines, notebooks to include
 2. **Analyze Dependencies**: Check for shared clusters, schedules
-3. **Consolidate Config**: Create unified bundle with multiple resources
+3. **Consolidate Config**: Create unified bundle with multiple resources (databricks.yaml)
 4. **Optimize**: Share job clusters where appropriate
 5. **Generate & Validate**
 

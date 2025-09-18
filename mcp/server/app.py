@@ -57,6 +57,8 @@ try:
     from tools import mcp as mcp_server
     # Also import DAB tools to register them
     import tools_dab
+    # Import workspace tools to register them
+    import tools_workspace
     logger.info("MCP tools loaded successfully from tools.py")
 except ImportError as e:
     logger.error(f"Failed to load MCP tools: {e}")

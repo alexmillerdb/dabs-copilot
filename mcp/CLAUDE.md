@@ -1,7 +1,7 @@
 # Databricks MCP Server - Implementation Guide
 
 ## 🎯 Overview
-Production-ready MCP server for Databricks workspace operations with 15 operational tools across Phase 1 (core operations) and Phase 2 (DAB generation). Successfully deployed to Databricks Apps and integrated with Claude Code CLI.
+Production-ready MCP server for Databricks workspace operations with 18 operational tools across 3 phases: core operations, DAB generation, and workspace upload/sync. Successfully deployed to Databricks Apps and integrated with Claude Code CLI.
 
 ## 🏗️ Architecture
 
@@ -12,6 +12,7 @@ mcp/
 │   ├── app.py                  # FastAPI + MCP hybrid (Databricks Apps)
 │   ├── tools.py                # 9 Phase 1 tools
 │   ├── tools_dab.py            # 6 Phase 2 DAB generation tools
+│   ├── tools_workspace.py      # 3 Phase 3 upload/sync tools
 │   └── services/               # Business logic layer
 ├── scripts/
 │   └── deploy.sh               # Databricks Apps deployment
@@ -24,7 +25,7 @@ mcp/
 - **Standardized Responses** - Consistent JSON format across all tools
 - **Environment Configuration** - YAML + .env for flexible deployment
 
-## 🛠️ Available Tools (15 Total)
+## 🛠️ Available Tools (18 Total)
 
 ### Phase 1 - Core Operations (9 tools) ✅
 - `health`, `list_jobs`, `get_job`, `run_job`
@@ -38,6 +39,11 @@ mcp/
 - `validate_bundle` - Validate configurations
 - `create_tests` - Generate test scaffolds
 - `get_cluster` - Cluster configuration details
+
+### Phase 3 - Workspace Upload (3 tools) ✅
+- `upload_bundle` - Upload DAB to workspace with folder structure
+- `run_bundle_command` - Execute validate/deploy commands
+- `sync_workspace_to_local` - Download bundles for local editing
 
 ## 🚀 Deployment Options
 
@@ -97,6 +103,21 @@ async def tool_name(param: str = Field(description="...")) -> str:
         return create_error_response(str(e))
 ```
 
+### Complete DAB Workflow
+```python
+# 1. Analyze notebook
+analysis = analyze_notebook(path="/Users/notebook.py")
+
+# 2. Generate bundle  
+bundle_yaml = generate_bundle(analysis_results=analysis)
+
+# 3. Upload to workspace
+result = upload_bundle(yaml_content=bundle_yaml, bundle_name="my-etl")
+
+# 4. Validate & Deploy
+status = run_bundle_command(workspace_path=result["bundle_path"], command="deploy")
+```
+
 ### Response Format
 ```json
 {
@@ -123,16 +144,16 @@ curl -H "Authorization: Bearer $(databricks auth token --profile aws-apps | jq -
 ## 📊 Implementation Status
 
 ### ✅ Completed
-- 15 working MCP tools across 2 phases
+- 18 working MCP tools across 3 phases
+- Complete DAB lifecycle (analyze → generate → upload → deploy)
 - Databricks Apps deployment with OAuth
 - Claude Code CLI integration
 - FastAPI hybrid server for HTTP access
-- Comprehensive test coverage
 
 ### 🎯 Next Steps
-- WebSocket support for real-time operations
+- Enhanced bundle deployment automation
+- Bundle versioning and rollback
 - Advanced monitoring and analytics
-- UI integration capabilities
 
 ## 🐛 Common Issues & Fixes
 
@@ -146,8 +167,8 @@ curl -H "Authorization: Bearer $(databricks auth token --profile aws-apps | jq -
    - Ensure proper Python path setup in app.py
 
 ## 📚 Key Achievements
+- **18 production-ready tools** with complete DAB lifecycle
 - **Zero-downtime deployment** to Databricks Apps
-- **15 production-ready tools** with error handling
 - **Sub-3 second response times** for all operations
 - **OAuth-secured endpoints** with Databricks authentication
-- **Hybrid architecture** supporting multiple deployment modes
+- **End-to-end workflow** from notebook analysis to deployment
