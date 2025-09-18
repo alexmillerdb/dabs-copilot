@@ -1,351 +1,187 @@
-# Claude Context for Databricks AI Copilot Project
+# I am working on creating a Databricks Asset Bundles Co-pilot application that uses Claude Code and MCP to generate bundles to validate and deploy in dev. The goal is to allow users to generate bundles from existing jobs or pipelines. And also generate bundles by analyzing code located in Databricks workspace. Please create a simple but effective CLAUDE.md file to help claude code generate bundles.
 
-## IMPORTANT: Documentation Context
-**ALWAYS reference the `/docs` folder for detailed implementation guidance:**
-- `/docs/databricks-asset-bundles.md` - Complete DAB structure, configuration, and examples
-- `/docs/custom-mcp-server.md` - MCP server setup, deployment, and connection methods
+Here is a concise CLAUDE.md you can add to your repo to guide Claude Code (via MCP) to generate Databricks Asset Bundles from existing jobs/pipelines or by analyzing workspace code.
 
-**Before implementing any feature, search and read relevant documentation in the `/docs` folder first.**
+Databricks Bundles Co-pilot — CLAUDE.md
 
-## Project Overview
-You are helping build a **Databricks AI Copilot** that uses Claude Code SDK and Model Context Protocol (MCP) to help Data Engineers and ML Engineers analyze notebooks/jobs and generate Databricks Asset Bundles (DABs) with unit tests.
+### Purpose
 
-## Current Sprint: 4-Week MVP Hackathon
-**Goal**: Deploy a working MCP server integrated with Claude Code CLI that allows users to analyze existing Databricks assets and generate DABs.
+- Help Claude Code generate, validate, and deploy Databricks Asset Bundles (DAB) to a dev target.
+- Support two entry paths: derive a bundle from existing Jobs/Pipelines, or infer a bundle by analyzing code in the Databricks workspace.
 
-## Architecture Components
 
-### 1. Claude Code SDK Agent
-- Orchestrates prompts and tool calls
-- Connects to MCP servers for Databricks operations
-- Generates DABs and unit tests from analysis
+### Assumptions
 
-### 2. MCP Integration ✅ Phase 1 COMPLETE
-- **Managed MCP**: Unity Catalog functions, Genie, Vector Search
-- **Custom MCP Server**: Working implementation with 9 operational tools:
-  - `health` - Server and Databricks connection status
-  - `list_jobs`, `get_job`, `run_job` - Job management
-  - `list_notebooks`, `export_notebook` - Notebook operations
-  - `execute_dbsql`, `list_warehouses` - SQL operations
-  - `list_dbfs_files` - File system browsing
+- Databricks CLI is authenticated locally, or MCP Databricks tools provide equivalent access.
+- Default target is dev only. Additional targets are out of scope unless explicitly requested.
+- Git workspace is clean; output will be generated in a new bundle directory.
 
-### 3. Claude Code CLI Integration
-- **Connection Mode**: stdio-based MCP server
-- **Authentication**: Uses existing Databricks CLI profiles
-- **Deployment**: Local server or Databricks Apps (optional)
-- **Interface**: Natural language chat through Claude
 
-## Implementation Timeline
+### Available tools
 
-### Current Status
-- [x] Week 1: Setup foundations ✅ COMPLETED
-- [x] Week 2: Build MCP server core ✅ COMPLETED (Phase 1)
-- [x] Week 3: Expand toolset (Phase 2: DAB generation) ⚡ 25% COMPLETE
-- [ ] Week 4: Polish and production deployment
+- MCP Databricks: list/get Jobs, Pipelines, Workspace files.
+- Filesystem: read/write project files.
+- Shell: run databricks bundle validate and deploy.
+- Git: create branches/commits (optional).
 
-### Current Focus: Phase 2 - DAB Generation Tools
-**Current Achievement**: `analyze_notebook` tool fully implemented ✅
-**Next Priority**: Integrate with MCP server and implement `generate_bundle`
 
-## Key Technical Requirements
+### Inputs Claude can ask for
 
-### Environment Setup ✅ COMPLETED
-- ✅ Unity Catalog enabled workspace
-- ✅ Serverless compute configured
-- ✅ Claude API key stored in Databricks secret scope
-- ✅ GitHub repository for version control
+- Databricks workspace host and profile to target for dev.
+- Source selection:
+    - Existing Job name/ID or Pipeline name/ID
+    - Workspace path(s) to analyze (e.g., /Workspace/Repos/... or /Workspace/Users/...)
+- Bundle name and destination folder (e.g., bundles/my-app).
+- Default cluster policy or runtime, and any secret/variable placeholders.
 
-### Security Requirements
-- OAuth authentication for UI
-- Secrets management via Databricks secrets
-- User permissions respect via Unity Catalog
 
-### Core Functionality (MVP)
-1. **Analyze existing notebooks/jobs** ✅
-   - [x] Export and parse notebook content ✅
-   - [x] Identify dependencies and patterns ✅
-   - [x] Generate DAB recommendations ✅
+### Workflow overview
 
-2. **Generate DABs** 📅
-   - [ ] Create `bundle.yml` from analysis
-   - [ ] Include proper targets (dev only for MVP)
-   - [ ] Generate unit test scaffolds
+- Plan: Confirm path (existing Job/Pipeline vs. workspace code analysis). Ask for minimal missing inputs.
+- Discover: Use MCP to fetch definitions and/or scan workspace code and metadata.
+- Synthesize: Create a minimal, valid bundle with resources.jobs and/or resources.pipelines, shared clusters if needed, targets.dev, variables, and artifacts when applicable.
+- Validate: Run databricks bundle validate and fix errors.
+- Deploy: Run databricks bundle deploy -t dev after user confirmation.
+- Deliver: Produce a ready-to-run directory with README and clear next steps.
 
-3. **Interactive Claude Integration** ⏳
-   - [x] Natural language interface via Claude Code CLI ✅
-   - [x] Resource selection through conversation ✅
-   - [ ] Preview generated artifacts in chat ⏳
-   - [ ] Deploy to dev environment via MCP tools
 
-## Development Guidelines
+### Generate from existing Job
 
-### CRITICAL: Documentation Usage
-Before writing ANY code:
-1. **Check `/docs/custom-mcp-server.md`** for MCP server implementation details
-2. **Check `/docs/databricks-asset-bundles.md`** for DAB structure and validation
+- Fetch full Job settings (including tasks, clusters, schedules, permissions).
+- Prefer referencing names over opaque IDs when allowed; where IDs are required, keep them as-is.
+- If the Job defines new_cluster, either:
+    - Inline under the Job’s job_clusters with a job_cluster_key, or
+    - Promote to resources.clusters and reference by key.
+- Extract libraries, task parameters, and environment (spark_version, node_type, policy, init scripts).
+- Create variables for any environment-specific values (paths, instance profiles, external locations).
+- Map secrets to secret references, not literal values.
 
-Use these documents as your primary reference - they contain tested patterns and official examples.
 
-### Code Structure
-```
-dabs-copilot/
-├── backend/
-│   ├── mcp_server/      # Custom MCP implementation
-│   ├── claude_agent/    # Claude SDK integration
-│   └── api/            # FastAPI backend
-├── mcp/                # MCP server implementation
-│   ├── server/        # Server code with 9 working tools
-│   ├── scripts/       # Deployment and testing scripts
-│   └── tests/         # Test suite
-├── databricks/
-│   ├── apps/          # Databricks App configs
-│   └── notebooks/     # Development notebooks
-└── tests/
-```
+### Generate from existing Pipeline
 
-### MCP Server Endpoints
-- **stdio mode** - Primary interface for Claude Code CLI
-- **FastAPI mode** (optional) - HTTP endpoints for future integrations:
-  - `GET /health` - Server health check
-  - `GET /mcp-info` - List available tools
-  - Future: REST API for tool execution
+- Fetch Pipeline configuration (clusters, libraries, configuration).
+- Include libraries as bundle artifacts or direct workspace paths.
+- Preserve edition, channel, photon, and expected trigger settings.
+- Parameterize storage locations and path-like config fields via variables where practical.
 
-### MCP Tool Definitions
 
-#### Phase 1 Tools (✅ COMPLETE - Working in /mcp)
-```python
-# Production-ready tools now available
-tools = {
-    "health": "Check server and Databricks connection",
-    "list_jobs": "List all jobs in workspace",
-    "get_job": "Get job configuration details",
-    "run_job": "Execute a job with parameters",
-    "list_notebooks": "List notebooks in path",
-    "export_notebook": "Export notebook in multiple formats",
-    "execute_dbsql": "Execute SQL queries",
-    "list_warehouses": "List SQL warehouses",
-    "list_dbfs_files": "Browse Databricks File System"
-}
-```
+### Generate from workspace code
 
-#### Phase 2 Tools (⚡ 25% COMPLETE)
-```python
-# DAB generation tools implementation status
-tools_phase2 = {
-    "analyze_notebook": "Deep notebook analysis", ✅ COMPLETE
-    "generate_bundle": "Create bundle.yml",     📅 Next
-    "validate_bundle": "Validate DAB configuration", 📅 Planned
-    "create_tests": "Generate unit test scaffolds"   📅 Planned
-}
+- Scan selected paths to identify entry points:
+    - DLT pipelines (look for dlt usage or pipeline settings)
+    - Notebook jobs (notebooks ending with .py or .ipynb)
+    - Python/SQL tasks, wheels, or requirements.txt
+- Infer:
+    - One or more jobs with tasks mapped to detected notebooks/entrypoints
+    - Shared cluster or job-specific clusters (keep minimal, default to serverless or a small runtime if unspecified)
+    - Artifacts section if building wheels or packaging local code
+- Add variables for external resources and absolute paths.
+
+
+### Bundle skeleton to emit
+
+Use this as a minimal template; expand only as needed by the discovered resources.
+
+```yaml
+bundle:
+  name: {{BUNDLE_NAME}}
+
+variables:
+  project_root:
+    description: Base workspace path for code
+    default: /Workspace/Repos/your-org/your-repo
+  default_storage_location:
+    description: External storage or base path for outputs
+    default: dbfs:/tmp/{{BUNDLE_NAME}}
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: {{WORKSPACE_HOST}}
+      root_path: /Workspace/Users/{{USER}}/bundles/{{BUNDLE_NAME}}-dev
+    run_as:
+      user_name: {{USER_EMAIL}}
+
+resources:
+  jobs:
+    {{JOB_KEY}}:
+      name: {{BUNDLE_NAME}} - dev job
+      job_clusters:
+        - job_cluster_key: shared-small
+          new_cluster:
+            spark_version: 13.3.x-scala2.12
+            num_workers: 1
+      tasks:
+        - task_key: main
+          job_cluster_key: shared-small
+          notebook_task:
+            notebook_path: ${var.project_root}/jobs/main
+          libraries: []
+      schedule: null
+
+  pipelines:
+    {{PIPELINE_KEY}}:
+      name: {{BUNDLE_NAME}} - dev pipeline
+      clusters:
+        - label: default
+          num_workers: 1
+      libraries: []
+      configuration:
+        pipeline_storage: ${var.default_storage_location}
 ```
 
-### Claude Code CLI Usage
-```bash
-# Add MCP server to Claude
-claude mcp add --scope user databricks-mcp python mcp/server/main.py
 
-# Use natural language to interact
-"List all jobs in my workspace"
-"Export the notebook at /Users/alex/etl.py"
-"Generate a DAB for this notebook"
+### Recommended project layout
+
+- bundles/{{BUNDLE_NAME}}/bundle.yml
+- bundles/{{BUNDLE_NAME}}/resources/jobs.yml (optional split)
+- bundles/{{BUNDLE_NAME}}/resources/pipelines.yml (optional split)
+- bundles/{{BUNDLE_NAME}}/README.md
+- .gitignore (exclude build/outputs as needed)
+
+
+### Validation and deployment
+
+- Run:
+    - databricks bundle validate
+    - databricks bundle deploy -t dev
+- If validation fails, update bundle.yml to address missing fields, bad IDs, or unsupported settings.
+- Optionally, run a smoke test:
+    - databricks bundle run {{JOB_KEY}} -t dev
+    - Or trigger the pipeline run if applicable.
+
+
+### Quality checks
+
+- Minimal first: only include resources that exist and are needed.
+- Prefer variables for anything workspace-specific or path-like.
+- Do not embed secrets; use secret scopes or reference variables.
+- Keep names consistent; use kebab-case keys and readable resource names.
+- Include a short README with how to validate, deploy, and where to edit.
+
+
+### Example README content
+
+```markdown
+# {{BUNDLE_NAME}} (dev)
+
+Commands:
+- Validate: `databricks bundle validate`
+- Deploy (dev): `databricks bundle deploy -t dev`
+
+Edit bundle settings in `bundle.yml`. Update variables under `variables:` or set via environment/CLI.
 ```
 
-## Testing Strategy
 
-### Unit Tests
-- MCP server handlers
-- Claude agent logic
-- API endpoint tests
+### When to ask for help
 
-### Integration Tests
-- End-to-end workflow: select → analyze → generate
-- MCP tool execution
-- Authentication flow
-- Bundle deployment
+- Missing workspace host/profile or ambiguous source selection.
+- Conflicting or incomplete Job/Pipeline definitions.
+- Required cluster policy/runtime not provided.
+- Permission or API errors from MCP/CLI.
 
-## Common Commands
+***
 
-### MCP Server Development ✅ WORKING
-```bash
-# Start MCP server for Claude Code CLI
-cd mcp/server
-python main.py
+Would you like the default flow to prioritize “generate from existing Job/Pipeline” when both code and existing resources are available, and what workspace host/profile should be set for the dev target?
 
-# Register with Claude (one-time setup)
-claude mcp add --scope user databricks-mcp python /path/to/mcp/server/main.py
-
-# Test MCP server locally
-cd mcp
-python test_local_mcp.py test  # Quick validation
-python test_local_mcp.py stdio # Test STDIO mode
-
-# Run comprehensive tests
-cd mcp/tests
-python test_tools.py
-```
-
-### Development
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Start FastAPI server (optional, for HTTP access)
-cd mcp/server
-python app.py
-
-# Databricks App deployment (optional)
-cd mcp
-./scripts/deploy.sh
-
-# Run tests
-cd mcp/tests
-python test_tools.py
-```
-
-### Databricks CLI
-```bash
-# Configure workspace
-databricks configure --profile dev
-
-# Create secret scope
-databricks secrets create-scope --scope claude-keys
-
-# Store API key
-databricks secrets put --scope claude-keys --key claude-api-key
-
-# Deploy bundle
-databricks bundle deploy --target dev
-```
-
-## Error Handling Patterns
-
-### MCP Server Errors
-- Graceful degradation if tools unavailable
-- Retry logic with exponential backoff
-- Clear error messages to UI
-
-### Claude Agent Errors
-- Rate limiting handling
-- Token limit management
-- Fallback to simpler prompts
-
-### Claude Integration Error States
-- Clear error messages in chat responses
-- Graceful degradation if tools unavailable
-- User-friendly explanations of issues
-
-## Performance Considerations
-
-### Optimization Targets
-- Chat response time < 3 seconds
-- Resource listing < 1 second
-- Bundle generation < 10 seconds
-- Tool execution < 2 seconds
-
-### Caching Strategy
-- Cache workspace resources (5 min TTL)
-- Cache notebook exports (until modified)
-- Session-based chat history
-
-## Security Checklist
-
-- [ ] Never log or expose API keys
-- [ ] Validate all user inputs
-- [ ] Use parameterized queries
-- [ ] Implement rate limiting
-- [ ] Audit tool usage
-- [ ] Respect UC permissions
-- [ ] HTTPS only for production
-
-## MVP Success Criteria
-
-1. **Functional Requirements**
-   - [x] User authenticated via Databricks CLI profile
-   - [x] User can select notebooks/jobs via Claude chat
-   - [ ] Claude analyzes selected resources
-   - [ ] System generates valid bundle.yml
-   - [ ] User can preview generated artifacts in chat
-   - [ ] User can deploy to dev environment
-
-2. **Non-Functional Requirements**
-   - [ ] Response time < 5 seconds for analysis
-   - [x] MCP server responds quickly to Claude requests
-   - [ ] Handles 10 concurrent users
-   - [ ] 95% uptime during demo
-
-## Debug Tips
-
-### Common Issues
-1. **MCP connection fails**: Check app deployment status
-2. **Claude timeout**: Reduce prompt complexity
-3. **OAuth fails**: Verify redirect URIs
-4. **Bundle invalid**: Check YAML formatting
-5. **MCP tools not available**: Check server registration with Claude
-
-### Logging
-- Backend: Python `logging` module
-- Claude: Tool response messages
-- MCP: Structured logs to Unity Catalog
-
-## References
-
-### Local Documentation (READ THESE FIRST)
-- `/docs/databricks-asset-bundles.md` - DAB configuration, structure, validation
-- `/docs/custom-mcp-server.md` - MCP server implementation and deployment
-
-### External Documentation
-- [Databricks Apps Documentation](https://docs.databricks.com/apps)
-- [Claude Code SDK](https://github.com/anthropics/claude-code)
-- [Model Context Protocol](https://modelcontextprotocol.io)
-- [Databricks Asset Bundles](https://docs.databricks.com/dev-tools/bundles)
-
-## MCP Server Implementation ✅ COMPLETE
-
-### Phase 1 Achievements
-1. **9 Working MCP Tools**
-   - Full Databricks workspace integration
-   - Jobs, notebooks, SQL, and file system operations
-   - Tested against live workspace
-
-2. **Claude Code CLI Integration**
-   ```bash
-   # Working command for Claude integration
-   claude mcp add --scope user databricks-mcp python /path/to/mcp/server/main.py
-   
-   # Natural language queries work immediately
-   "List all jobs in my workspace"
-   "Export notebook at /Users/alex/etl.py"
-   "Run SQL query: SELECT * FROM main.default.sales"
-   ```
-
-3. **Production-Ready Architecture**
-   - Profile-based authentication using existing CLI setup
-   - Environment-aware configuration with YAML + env vars
-   - Comprehensive error handling and logging
-   - Service layer separation for clean testing
-
-4. **Deployment Options**
-   - Local server for development (stdio mode)
-   - FastAPI hybrid for HTTP access
-   - Databricks Apps deployment scripts ready
-
-The MCP server is fully operational and ready for Phase 2 DAB generation tools.
-
-## Implementation Workflow
-
-When implementing ANY feature:
-1. **FIRST**: Read relevant documentation in `/docs` folder
-2. **SECOND**: Check the PROJECT_PLAN.md for scope and requirements
-3. **THIRD**: Begin implementation following the patterns found
-4. **FOURTH**: Test locally with Claude Code CLI before deployment
-
-## Next Steps
-
-When implementing:
-1. Start with Week 1 setup tasks
-2. Test each component in isolation
-3. Integrate incrementally
-4. Focus on MVP scope only
-5. Document as you build
-
-Remember: This is a hackathon MVP. Prioritize working functionality over perfect code. Get the core flow working first, then iterate.
