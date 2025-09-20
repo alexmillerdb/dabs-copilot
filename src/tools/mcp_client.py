@@ -50,6 +50,10 @@ class DatabricksMCPClient:
     async def get_job(self, job_id: int) -> Dict[str, Any]:
         """Get specific job details"""
         return await self.call_tool("get_job", {"job_id": job_id})
+    
+    async def list_notebooks(self, path: str = "/", recursive: bool = False) -> Dict[str, Any]:
+        """List notebooks in workspace"""
+        return await self.call_tool("list_notebooks", {"path": path, "recursive": recursive})
         
     async def analyze_notebook(self, notebook_path: str) -> Dict[str, Any]:
         """Analyze notebook for DAB generation"""
