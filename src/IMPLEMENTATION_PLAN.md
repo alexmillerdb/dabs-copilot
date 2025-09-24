@@ -1,8 +1,8 @@
-# Databricks Asset Bundles Agent System - Implementation Plan
+# DAB Generator MVP - Implementation Plan
 
 ## Overview
 
-This implementation plan outlines the creation of an intelligent agent system using Claude Code SDK that works in harmony with the existing production-ready MCP server. The hybrid approach preserves the 18 operational tools while adding sophisticated conversation management and multi-step workflow capabilities.
+This implementation plan outlines the creation of a simple but effective web-based DAB (Databricks Asset Bundle) generator. The MVP leverages the existing production-ready MCP server and the proven Claude Code SDK pattern from `src/examples/databricks_job_dab_example.py` to create a user-friendly interface for generating bundles.
 
 ## Current MCP Server Status ✅
 
@@ -14,476 +14,486 @@ This implementation plan outlines the creation of an intelligent agent system us
 - **Phase 2 (6 tools)**: analyze_notebook, generate_bundle, generate_bundle_from_job, validate_bundle, create_tests, get_cluster
 - **Phase 3 (3 tools)**: upload_bundle, run_bundle_command, sync_workspace_to_local
 
-**Capabilities**: Complete DAB lifecycle (analyze → generate → upload → deploy)
-**Local Testing**: Works with Claude Code CLI via `python mcp/server/main.py`
+**Authentication**: Uses `DATABRICKS_CONFIG_PROFILE=aws-apps` (profile-based auth working ✅)
 
-## Hybrid Architecture
-
-```
-src/ (Agent System)              mcp/server/ (Existing)
-├── agents/                      ├── main.py (FastMCP stdio)
-│   ├── orchestrator.py          ├── app.py (FastAPI HTTP)
-│   ├── bundle_specialist.py     ├── tools.py (9 core tools)
-│   └── deployment_manager.py    ├── tools_dab.py (6 DAB tools)
-└── tools/                       └── tools_workspace.py (3 upload tools)
-    ├── agent_tools.py           
-    └── mcp_client.py            
-```
-
-**Communication Flow**:
-1. User → Claude Code SDK Agent (src/)
-2. Agent → In-process MCP tools (orchestration)
-3. Agent → HTTP calls to existing MCP server (Databricks operations)
-4. Agent → Intelligent response synthesis
-
-## Folder Structure
+## MVP Architecture
 
 ```
-src/
-├── __init__.py
-├── main.py                    # Claude SDK entry point
-├── IMPLEMENTATION_PLAN.md     # This document
-├── config/
-│   ├── __init__.py
-│   ├── settings.py           # Agent configuration
-│   └── prompts/              # Agent system prompts
-│       ├── orchestrator.md
-│       ├── bundle_specialist.md
-│       └── deployment_manager.md
-├── agents/
-│   ├── __init__.py
-│   ├── base_agent.py         # Base agent with SDK client
-│   ├── orchestrator.py       # Main routing agent (Chief of Staff pattern)
-│   ├── bundle_specialist.py  # DAB generation expert
-│   └── deployment_manager.py # Validation & deployment expert
-├── tools/
-│   ├── __init__.py
-│   ├── agent_tools.py        # SDK in-process tools for orchestration
-│   └── mcp_client.py         # HTTP client bridge to existing MCP server
-├── services/
-│   ├── __init__.py
-│   ├── conversation_service.py # Manage context & history
-│   └── workflow_service.py     # Complex multi-step workflows
-├── utils/
-│   ├── __init__.py
-│   ├── mcp_bridge.py         # Bridge between SDK and FastMCP
-│   └── response_formatter.py # Consistent output formatting
-└── tests/
-    ├── __init__.py
-    ├── test_agents/
-    ├── test_tools/
-    └── test_integration/
+dabs-copilot/
+├── src/
+│   ├── examples/                    # Reference implementations ✅
+│   │   └── databricks_job_dab_example.py  # Working Claude SDK pattern
+│   ├── api/                         # FastAPI backend
+│   │   ├── main.py                  # FastAPI app
+│   │   ├── models.py                # Request/response schemas
+│   │   ├── claude_client.py         # Claude SDK wrapper (from example)
+│   │   └── bundle_service.py        # DAB generation logic
+│   └── frontend/                    # Simple web UI
+│       ├── static/
+│       │   ├── index.html           # Single page app
+│       │   ├── app.js               # Vanilla JavaScript
+│       │   └── style.css            # Basic styling
+│       └── bundles/                 # Generated bundle storage
+├── mcp/                             # Existing MCP server ✅
+│   └── server/                      # 18 production tools
+└── .env                             # Environment config ✅
 ```
 
-## Core Components
+## MVP Features
 
-### 1. Main Entry Point (`main.py`)
+### Core Functionality
+✅ **Job → DAB Generation** - User inputs job ID, gets downloadable bundle
+✅ **Workspace → DAB Generation** - User inputs workspace path, gets bundle  
+✅ **Real-time Progress** - Show what's happening during generation
+✅ **Download Results** - ZIP file with generated bundle
+✅ **Bundle Validation** - Validate generated bundles before download
 
+### Out of Scope (for MVP)
+❌ Authentication (use existing profile)
+❌ Bundle deployment to workspace
+❌ Multiple workspace support
+❌ Advanced configuration options
+❌ Bundle editing interface
+
+## Chat-Based API Design
+
+### Primary Chat Interface
 ```python
-from claude_code_sdk import ClaudeSDKClient, create_sdk_mcp_server
-from agents.orchestrator import OrchestratorAgent
-from tools.agent_tools import create_agent_tools
+# Natural language DAB generation
+POST /api/chat
+# Request: {
+#   "message": "Generate a DAB from job 662067900958232 with ML optimizations",
+#   "conversation_id": "optional-uuid-for-context"
+# }
+# Response: Server-Sent Events (SSE) stream with:
+# {
+#   "type": "message", 
+#   "content": "🚀 I'll generate an ML-optimized bundle from job 662067900958232..."
+# }
+# {
+#   "type": "tool_use",
+#   "tool": "get_job",
+#   "status": "running"
+# }
+# {
+#   "type": "file_generated",
+#   "filename": "job-662067900958232-bundle.zip",
+#   "download_url": "/api/files/bundle-uuid"
+# }
 
-# Create in-process MCP server for agent coordination
-agent_server = create_sdk_mcp_server(
-    name="dab-agent-coordinator",
-    version="1.0.0",
-    tools=create_agent_tools()
-)
+# System health check
+GET /api/health
+# Response: {"status": "healthy", "databricks_connected": true, "mcp_tools": 18}
 
-# Initialize main agent with hybrid MCP setup
-def create_dab_agent():
-    return ClaudeSDKClient(
-        mcp_servers=[agent_server],
-        system_prompt=load_orchestrator_prompt()
-    )
+# Download generated files
+GET /api/files/{file_id}
+# Response: ZIP file download or individual file
+
+# Optional: Chat history
+GET /api/history/{conversation_id}
+# Response: {"messages": [...], "files_generated": [...]}
 ```
 
-### 2. Orchestrator Agent (`agents/orchestrator.py`)
-
-**Responsibilities**:
-- Route user requests to specialist agents
-- Maintain conversation context
-- Coordinate multi-agent workflows
-- Bridge between SDK and existing MCP server
-
-**Pattern**: Chief of Staff from Claude Code cookbook
-
-### 3. Specialist Agents
-
-**Bundle Specialist** (`agents/bundle_specialist.py`):
-- Complex DAB generation workflows
-- Multi-resource bundle coordination
-- Advanced parameter optimization
-- Template customization
-
-**Deployment Manager** (`agents/deployment_manager.py`):
-- Bundle validation orchestration
-- Deployment strategy planning
-- Error recovery workflows
-- Environment management
-
-### 4. MCP Bridge (`tools/mcp_client.py`)
-
+### Chat-Based Data Flow Pattern
 ```python
-class DatabricksMCPClient:
-    """Bridge to existing FastMCP server (local or remote)"""
+# Streaming natural language workflow:
+1. User sends natural language message via POST /api/chat
+2. FastAPI creates ClaudeSDKClient with CLAUDE.md context
+3. Claude reads context and understands DAB domain expertise
+4. Stream responses back to user in real-time (SSE)
+5. Claude uses MCP tools dynamically based on user request
+6. Files are generated and made available via download links
+7. Conversation context maintained for follow-up questions
+
+# Implementation:
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    """Stream DAB generation responses"""
     
-    def __init__(self, mode="local", remote_url=None):
-        if mode == "local":
-            # For development - connect to local stdio server
-            self.server_command = ["python", "mcp/server/main.py"]
-            self.use_stdio = True
-        else:
-            # For production - HTTP to Databricks Apps
-            self.base_url = remote_url or os.getenv("MCP_REMOTE_URL", 
-                "https://databricks-mcp-server-1444828305810485.aws.databricksapps.com")
-            self.use_stdio = False
-        
-    async def call_tool(self, tool_name: str, params: dict) -> dict:
-        """Call existing MCP server tools via stdio or HTTP"""
-        if self.use_stdio:
-            # Use subprocess to communicate with local stdio server
-            return await self._call_stdio(tool_name, params)
-        else:
-            # Use HTTP client for remote server
-            return await self._call_http(tool_name, params)
-        
-    async def list_jobs(self, **kwargs) -> dict:
-        return await self.call_tool("list_jobs", kwargs)
-        
-    async def analyze_notebook(self, **kwargs) -> dict:
-        return await self.call_tool("analyze_notebook", kwargs)
-        
-    # ... wrapper methods for all 18 tools
+    async def generate_response():
+        async with ClaudeSDKClient(
+            options=ClaudeCodeOptions(
+                model="claude-sonnet-4-20250514",
+                cwd="src/api",  # CLAUDE.md context
+                mcp_servers=build_mcp_servers(),
+                allowed_tools=ALL_MCP_TOOLS,
+                max_turns=20  # Allow for complex conversations
+            )
+        ) as client:
+            
+            async for message in client.query(request.message):
+                if isinstance(message, AssistantMessage):
+                    yield f"data: {json.dumps({'type': 'message', 'content': message.content})}\n\n"
+                elif isinstance(message, ToolUseBlock):
+                    yield f"data: {json.dumps({'type': 'tool_use', 'tool': message.name})}\n\n"
+    
+    return StreamingResponse(generate_response(), media_type="text/plain")
 ```
 
-### 5. Agent Tools (`tools/agent_tools.py`)
+## Chat-Based Frontend UI Design
 
-```python
-from claude_code_sdk import tool
-from tools.mcp_client import DatabricksMCPClient
+### Chat Interface Layout
+```html
+┌─────────────────────────────────────────────────┐
+│              DAB Generator Chat                 │
+├─────────────────────────────────────────────────┤
+│ Chat Messages:                                  │
+│                                                 │
+│ User: Generate a bundle from job 662067900958232│
+│                                                 │
+│ 🤖 Claude: 🚀 I'll generate a DAB from job     │
+│ 662067900958232. Let me analyze it first...     │
+│                                                 │
+│ ⚡ Using tool: get_job                          │
+│ ✅ Found MLflow batch inference job             │
+│                                                 │
+│ ⚡ Using tool: analyze_notebook                 │
+│ 📊 Analyzing notebook for dependencies...       │
+│                                                 │
+│ ✅ Generated optimized ML bundle!               │
+│ 📦 [Download: job-662067900958232-bundle.zip]  │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│ [                                           ] 💬│
+│ Type your DAB generation request...             │
+│                                                 │
+│ 💡 Examples:                                    │
+│ • Generate a bundle from job 123                │
+│ • Create bundles for /Workspace/Users/alex/ml/  │
+│ • Convert my streaming job with smaller clusters │
+└─────────────────────────────────────────────────┘
+```
 
-@tool()
-async def orchestrate_bundle_creation(
-    source_type: str,
-    source_identifier: str,
-    target_env: str = "dev"
-) -> str:
-    """
-    Orchestrate complete bundle creation workflow
-    
-    Args:
-        source_type: "job", "notebook", or "workspace_path"
-        source_identifier: Job ID, notebook path, or workspace directory
-        target_env: Target environment (dev/staging/prod)
-    """
-    client = DatabricksMCPClient()
-    
-    if source_type == "job":
-        # Multi-step workflow using existing MCP tools
-        job_data = await client.get_job(job_id=source_identifier)
-        bundle_config = await client.generate_bundle_from_job(
-            job_id=source_identifier,
-            bundle_name=f"job-{source_identifier}-bundle"
-        )
-        validation = await client.validate_bundle(yaml_content=bundle_config)
-        
-        return format_workflow_result({
-            "job_analysis": job_data,
-            "bundle_config": bundle_config,
-            "validation": validation
-        })
-
-@tool()
-async def delegate_to_specialist(
-    task_type: str,
-    task_details: str
-) -> str:
-    """Delegate complex tasks to specialist agents"""
-    if task_type == "bundle_generation":
-        specialist = BundleSpecialist()
-        return await specialist.handle_request(task_details)
-    elif task_type == "deployment":
-        manager = DeploymentManager()
-        return await manager.handle_request(task_details)
+### Interactive Features
+```javascript
+// Chat-based JavaScript features:
+1. Real-time message streaming (Server-Sent Events)
+2. Auto-scrolling chat messages
+3. Typing indicators during tool usage
+4. Inline download buttons for generated files
+5. Message history and conversation context
+6. Example prompts to guide users
+7. File preview capabilities (YAML viewer)
+8. Copy/paste bundle configurations
 ```
 
 ## Implementation Timeline
 
-### Phase 1: Foundation (Days 1-2) ✅ COMPLETED
-```
-✅ Create src/ folder structure
-✅ Implement base agent class with ClaudeSDKClient
-✅ Create MCP bridge to local server (mcp/server/main.py)
-✅ Build simple orchestrator agent
-✅ Test hybrid communication with local MCP server
-✅ Configure Claude API key integration
-✅ Set up comprehensive test suite (15 passing tests)
-```
-
-**Completed Components:**
-- **Folder Structure**: Complete modular organization with agents/, tools/, services/, tests/
-- **Base Agent Class**: Abstract base with lazy-loaded Claude SDK client
-- **MCP Bridge**: Dual-mode client (local stdio + remote HTTP) 
-- **Orchestrator Agent**: Main routing agent with command parsing
-- **Configuration System**: Pydantic settings with .env file support
-- **Claude SDK Integration**: Automatic API key loading and client creation
-- **Test Coverage**: 15 passing tests using TDD approach
-
-### Phase 2: Core Agents (Days 3-4)
-```
-- Implement Bundle Specialist agent
-- Create Deployment Manager agent
-- Add conversation context management
-- Build multi-step workflow coordination
-- Test complex DAB workflows
-```
-
-### Phase 3: Advanced Features (Days 5-6)
-```
-- Enhanced error handling & recovery
-- Performance optimization
-- Advanced prompt engineering
-- Integration testing with existing MCP server
-- Documentation and examples
-```
-
-### Phase 4: Integration & Polish (Day 7)
-```
-- UI integration preparation
-- End-to-end testing
-- Performance tuning
-- Production readiness
-```
-
-## Key Design Patterns
-
-### 1. Chief of Staff Pattern
+### Phase 1: Chat Backend (2-3 hours)
 ```python
-# Orchestrator delegates to specialists
-class OrchestratorAgent:
-    def route_request(self, user_input: str) -> str:
-        if "generate bundle" in user_input.lower():
-            return self.delegate_to_bundle_specialist(user_input)
-        elif "deploy" in user_input.lower():
-            return self.delegate_to_deployment_manager(user_input)
+✅ Create FastAPI app with SSE streaming support
+✅ Implement POST /api/chat endpoint with Claude SDK integration
+✅ Extract CLAUDE.md context pattern from examples/databricks_job_dab_example.py
+✅ Add file generation and download endpoint
+✅ Test with natural language: "Generate bundle from job 662067900958232"
 ```
 
-### 2. Bridge Pattern
+### Phase 2: Chat Frontend (1-2 hours)
+```html
+✅ Create chat interface with message bubbles
+✅ Implement Server-Sent Events for real-time streaming
+✅ Add auto-scrolling and typing indicators
+✅ Create inline download buttons for generated files
+✅ Add example prompts to guide user interaction
+```
+
+### Phase 3: Enhanced Features (1-2 hours)
+```
+✅ Conversation history and context management
+✅ File preview capabilities (YAML viewer)
+✅ Error handling with helpful suggestions
+✅ Mobile-responsive chat design
+✅ Copy/paste functionality for configurations
+```
+
+## Key Implementation Details
+
+### Chat-Based Implementation Pattern
 ```python
-# Seamless integration between SDK and FastMCP
-class MCPBridge:
-    async def execute_tool(self, tool_name: str, params: dict):
-        # Route to appropriate backend (SDK vs HTTP)
-        if tool_name in self.agent_tools:
-            return await self.sdk_server.call_tool(tool_name, params)
-        else:
-            return await self.http_client.call_tool(tool_name, params)
-```
-
-### 3. Context Management
-```python
-# Persistent conversation context
-class ConversationService:
-    def __init__(self):
-        self.context = {
-            "selected_resources": [],
-            "generated_bundles": [],
-            "deployment_history": []
-        }
-        
-    def add_context(self, key: str, value: any):
-        self.context[key].append(value)
-```
-
-## Sample Workflows
-
-### Workflow 1: Job to Bundle (Simple)
-```
-User: "Generate a bundle from job ID 123"
-↓
-Orchestrator → MCP Bridge → get_job(123)
-↓
-Orchestrator → MCP Bridge → generate_bundle_from_job(123)
-↓
-Orchestrator → Format and return bundle YAML
-```
-
-### Workflow 2: Complex Analysis (Multi-step)
-```
-User: "Analyze all notebooks in /Users/analytics/ and create optimized bundles"
-↓
-Orchestrator → Bundle Specialist
-↓
-Specialist → MCP Bridge → list_notebooks("/Users/analytics/")
-↓
-Specialist → MCP Bridge → analyze_notebook() for each
-↓
-Specialist → Advanced optimization logic
-↓
-Specialist → MCP Bridge → generate_bundle() with optimizations
-↓
-Specialist → Return comprehensive analysis + bundle
-```
-
-## Configuration Examples
-
-### Agent Settings (`config/settings.py`)
-```python
-from pydantic import BaseSettings
-
-class AgentSettings(BaseSettings):
-    # MCP Server Configuration
-    mcp_mode: str = "local"  # "local" or "remote"
-    mcp_remote_url: str = "https://databricks-mcp-server-1444828305810485.aws.databricksapps.com"
-    mcp_local_command: str = "python mcp/server/main.py"
+# Streaming chat with CLAUDE.md context:
+def build_chat_options() -> ClaudeCodeOptions:
+    """Build Claude options for chat-based DAB generation"""
+    project_root = Path(__file__).parent.parent.parent
+    mcp_server_path = project_root / "mcp" / "server" / "main.py"
     
-    # Claude SDK
-    claude_api_key: str
-    max_conversation_length: int = 100
-    
-    # Agent Behavior
-    auto_validate_bundles: bool = True
-    default_target_env: str = "dev"
-    enable_advanced_analysis: bool = True
-    
-    class Config:
-        env_file = ".env"
-```
-
-### Orchestrator Prompt (`config/prompts/orchestrator.md`)
-```markdown
-You are the Databricks Asset Bundle Orchestrator, an expert system for managing DAB workflows.
-
-Your responsibilities:
-- Route user requests to appropriate specialist agents
-- Coordinate multi-step bundle generation workflows
-- Maintain conversation context and user preferences
-- Provide clear, actionable responses
-
-Available specialists:
-- Bundle Specialist: Complex DAB generation, optimization, multi-resource bundles
-- Deployment Manager: Validation, deployment strategies, environment management
-
-Available tools via existing MCP server:
-- 18 production-ready Databricks tools
-- Complete DAB lifecycle capabilities
-- Workspace analysis and manipulation
-
-Always prioritize user workflow efficiency and provide step-by-step progress updates.
-```
-
-## Testing Strategy
-
-### Unit Tests
-```python
-# tests/test_agents/test_orchestrator.py
-async def test_job_bundle_workflow():
-    orchestrator = OrchestratorAgent()
-    result = await orchestrator.process("Generate bundle from job 123")
-    assert "bundle.yml" in result
-    assert "validation" in result
-
-# tests/test_tools/test_mcp_bridge.py
-async def test_mcp_client_communication():
-    client = DatabricksMCPClient()
-    jobs = await client.list_jobs(limit=5)
-    assert jobs["success"] is True
-```
-
-### Integration Tests
-```python
-# tests/test_integration/test_end_to_end.py
-async def test_complete_bundle_workflow():
-    agent = create_dab_agent()
-    response = await agent.query(
-        "Analyze job 123 and create an optimized bundle for dev environment"
+    return ClaudeCodeOptions(
+        model="claude-sonnet-4-20250514",
+        cwd="src/api",  # Directory containing CLAUDE.md ✅
+        mcp_servers={
+            "databricks-mcp": {
+                "command": "python",
+                "args": [str(mcp_server_path)],
+                "env": {
+                    "DATABRICKS_CONFIG_PROFILE": os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT"),
+                    "DATABRICKS_HOST": os.getenv("DATABRICKS_HOST", ""),
+                }
+            }
+        },
+        allowed_tools=ALL_MCP_TOOLS,  # Full tool access for natural language
+        max_turns=20  # Extended for conversational workflows
     )
-    # Verify complete workflow execution
+
+@app.post("/api/chat")
+async def chat_dab_generation(request: ChatRequest):
+    """Handle natural language DAB generation requests"""
+    
+    async def stream_responses():
+        async with ClaudeSDKClient(options=build_chat_options()) as client:
+            # Claude reads CLAUDE.md for DAB expertise automatically
+            async for message in client.query(request.message):
+                
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            yield {
+                                "type": "message",
+                                "content": block.text,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        elif isinstance(block, ToolUseBlock):
+                            yield {
+                                "type": "tool_use",
+                                "tool": block.name,
+                                "status": "starting",
+                                "inputs": block.input
+                            }
+                
+                elif isinstance(message, ResultMessage):
+                    # Handle file generation and download links
+                    if hasattr(message, 'files_generated'):
+                        for file_path in message.files_generated:
+                            yield {
+                                "type": "file_generated",
+                                "filename": Path(file_path).name,
+                                "download_url": f"/api/files/{generate_file_id(file_path)}"
+                            }
+    
+    return StreamingResponse(
+        (f"data: {json.dumps(data)}\n\n" async for data in stream_responses()),
+        media_type="text/plain"
+    )
+```
+
+### Conversation Management
+```python
+# Chat-based session management:
+conversations: Dict[str, ConversationState] = {}
+
+class ConversationState:
+    conversation_id: str
+    messages: List[ChatMessage]
+    generated_files: List[GeneratedFile]
+    context: Dict[str, Any]  # For maintaining context between messages
+    created_at: datetime
+    last_activity: datetime
+
+class ChatMessage:
+    role: str  # "user" or "assistant"
+    content: str
+    timestamp: datetime
+    tool_uses: List[str] = []  # Track which tools were used
+    files_generated: List[str] = []
+
+# File management for downloads
+generated_files: Dict[str, str] = {}  # file_id -> file_path
+
+def generate_file_id(file_path: str) -> str:
+    """Generate unique ID for file downloads"""
+    file_id = str(uuid.uuid4())
+    generated_files[file_id] = file_path
+    return file_id
+
+@app.get("/api/files/{file_id}")
+async def download_file(file_id: str):
+    """Download generated bundle files"""
+    if file_id not in generated_files:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    file_path = generated_files[file_id]
+    if not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="File no longer available")
+    
+    return FileResponse(
+        file_path,
+        media_type='application/octet-stream',
+        filename=Path(file_path).name
+    )
+```
+
+## File Structure
+```
+src/
+├── __init__.py
+├── IMPLEMENTATION_PLAN.md         # This document
+├── examples/                      # Reference implementations ✅
+│   ├── databricks_job_dab_example.py  # Working pattern to reuse
+│   ├── quick_start.py
+│   ├── streaming_mode.py
+│   ├── mcp_calculator.py
+│   └── custom_mcp_example.py
+└── api/                           # Chat-based MVP backend
+    ├── CLAUDE.md                  # Context file for DAB generation ✅
+    ├── main.py                    # FastAPI chat app (~200 lines)
+    ├── models.py                  # Chat & conversation schemas (~100 lines)
+    ├── chat_handler.py            # Chat streaming logic (~150 lines)
+    ├── file_manager.py            # File generation & downloads (~100 lines)
+    └── static/                    # Chat frontend
+        ├── index.html             # Chat UI (~150 lines)
+        ├── chat.js                # SSE + chat logic (~250 lines)
+        ├── style.css              # Chat styling (~120 lines)
+        └── files/                 # Generated bundle storage
+```
+
+**Total: ~1,070 lines of code for complete chat-based MVP**
+
+## Success Criteria
+
+### Chat MVP Complete
+- [ ] FastAPI backend with streaming chat endpoint
+- [ ] Natural language DAB generation working end-to-end
+- [ ] Real-time streaming responses (Server-Sent Events)
+- [ ] File generation with download links in chat
+- [ ] Conversation context and history management
+- [ ] Professional chat UI with examples and guidance
+- [ ] Error handling with conversational recovery
+- [ ] CLAUDE.md context integration for domain expertise
+
+### Ready for Extension
+- [ ] Multi-conversation support with persistent history
+- [ ] Advanced file preview and editing capabilities
+- [ ] Mobile-responsive chat interface
+- [ ] Integration with Databricks deployment workflows
+- [ ] Docker deployment configuration
+- [ ] API documentation for chat endpoints
+
+## Environment Setup ✅
+
+```bash
+# Required environment variables (already configured):
+DATABRICKS_CONFIG_PROFILE=aws-apps           # ✅ Working
+DATABRICKS_HOST=https://e2-demo-field-eng... # ✅ Working
+CLAUDE_API_KEY=sk-ant-api03-...              # ✅ Required for Claude SDK
+```
+
+## Development Workflow
+
+### Local Development
+```bash
+# Terminal 1: Start chat backend
+cd src/api
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Terminal 2: Open chat interface
+# Open http://localhost:8000 in browser
+
+# Terminal 3: Monitor MCP server (optional)
+cd mcp/server  
+python main.py
+```
+
+### Testing
+```bash
+# Test chat endpoint
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Generate a bundle from job 662067900958232"}'
+
+# Test health check
+curl http://localhost:8000/api/health
+
+# Test file download
+curl http://localhost:8000/api/files/{file-id}
+```
+
+## Next Steps
+
+1. **Start with Phase 1** - Create FastAPI chat backend with streaming
+2. **Build Chat UI** - Real-time chat interface with Server-Sent Events
+3. **Add Advanced Features** - File preview, conversation history, mobile support
+4. **Enhance Context** - Improve CLAUDE.md for better DAB generation
+5. **Package for Deployment** - Docker container for easy deployment
+
+## Sample User Interactions
+
+### Example 1: Simple Job Conversion
+```
+User: Generate a bundle from job 662067900958232
+
+Claude: 🚀 I'll generate a DAB from job 662067900958232. Let me analyze it first...
+
+⚡ Using tool: get_job
+✅ Found MLflow batch inference job with 1 notebook
+
+⚡ Using tool: analyze_notebook  
+📊 Analyzing notebook for dependencies and ML patterns...
+
+⚡ Using tool: generate_bundle
+🔧 Creating optimized ML bundle with 14.3.x-ml cluster configuration...
+
+✅ Bundle generated successfully!
+📦 [Download: job-662067900958232-bundle.zip]
+
+The bundle includes:
+• Optimized ML cluster configuration
+• MLflow library dependencies  
+• Parameterized variables for different environments
+• Validation passed ✅
+```
+
+### Example 2: Conversational Refinement
+```
+User: Make the cluster smaller for dev
+
+Claude: ✅ I'll update the cluster configuration for a development environment.
+
+⚡ Using tool: generate_bundle
+🔧 Updated cluster to i3.large with 1 worker for cost optimization...
+
+✅ Updated bundle generated!
+📦 [Download: job-662067900958232-bundle-dev.zip]
+
+Changes made:
+• Cluster: i3.xlarge → i3.large (cost savings)
+• Workers: 2 → 1 (sufficient for dev)
+• Same ML optimizations maintained
+```
+
+## CLAUDE.md Integration Benefits
+
+### Context-Aware Generation
+✅ **Domain Expertise** - Claude understands DAB best practices from CLAUDE.md
+✅ **Workflow Guidance** - Follows structured generation patterns automatically
+✅ **Quality Standards** - Ensures bundles meet Databricks requirements
+✅ **Error Recovery** - Provides contextual fixes and alternatives
+✅ **Template Selection** - Chooses appropriate patterns for detected workloads
+
+### Implementation Pattern
+```python
+# The cwd parameter points Claude to the api/ directory:
+ClaudeCodeOptions(
+    model="claude-sonnet-4-20250514",
+    cwd="src/api",  # Claude reads CLAUDE.md from this directory
+    mcp_servers=...,
+    max_turns=15
+)
+
+# Claude automatically incorporates CLAUDE.md context:
+# - Objective and use cases
+# - Workflow patterns and standards  
+# - Template selection logic
+# - Error handling approaches
+# - Response guidelines and quality metrics
 ```
 
 ## Key Advantages
 
-1. **Preserve Investment**: Keep excellent 18-tool MCP server
-2. **Add Intelligence**: Layer sophisticated agents on top
-3. **Flexible Deployment**: Can run locally or in Databricks Apps
-4. **Modular Design**: Each component evolves independently
-5. **Best of Both Worlds**: FastMCP operations + SDK conversations
-6. **Scalable Architecture**: Easy to add new agents and capabilities
+✅ **Fast to Build** - Reuses working MCP integration and Claude SDK pattern
+✅ **Contextually Intelligent** - Claude understands DAB domain from CLAUDE.md
+✅ **Simple to Use** - Single page, clear workflow, immediate results
+✅ **Production Ready** - Built on proven MCP server with 18 operational tools
+✅ **Quality Assured** - Follows Databricks best practices automatically
+✅ **Easy to Extend** - Clean API and modular structure for future features
+✅ **Self Contained** - No complex dependencies or external services
 
-## Success Criteria
-
-### Phase 1 Complete ✅
-- [x] Basic agent structure implemented
-- [x] MCP bridge communicating with existing server  
-- [x] Simple orchestrator routing requests
-- [x] End-to-end test working locally
-- [x] Claude API key configured and working
-- [x] Comprehensive test suite (15 passing tests)
-- [x] TDD approach with clean code practices
-
-### Phase 2 Complete
-- [ ] Bundle Specialist handling complex workflows
-- [ ] Deployment Manager coordinating validation/deployment
-- [ ] Multi-step workflows executing successfully
-- [ ] Conversation context maintained
-
-### Phase 3 Complete
-- [ ] Advanced error handling and recovery
-- [ ] Performance optimized for production use
-- [ ] Comprehensive test coverage
-- [ ] Ready for UI integration
-
-## Development Workflow
-
-### Local Testing with Existing MCP Server
-```bash
-# Terminal 1: Start local MCP server
-cd mcp/server
-python main.py
-
-# Terminal 2: Test with Claude Code CLI (if configured)
-claude-code-cli connect stdio python mcp/server/main.py
-claude-code-cli chat "List all jobs in my workspace"
-
-# Terminal 3: Run agent system (once built)
-cd src
-python main.py
-```
-
-### Environment Setup ✅ CONFIGURED
-```bash
-# Required environment variables (configured in .env)
-CLAUDE_API_KEY=sk-ant-api03-...  # ✅ Configured and working
-MCP_MODE=local                   # ✅ Set to local for development
-MCP_REMOTE_URL=https://databricks-mcp-server-1444828305810485.aws.databricksapps.com
-DATABRICKS_CONFIG_PROFILE=aws-apps
-DATABRICKS_HOST=https://e2-demo-field-eng.cloud.databricks.com
-```
-
-**Configuration Features:**
-- **Automatic .env Loading**: Supports both `../env` and `.env` paths
-- **API Key Fallback**: Uses `ANTHROPIC_API_KEY` if `CLAUDE_API_KEY` not set
-- **Extra Fields Ignored**: Pydantic ignores unrelated environment variables
-- **Validation**: Comprehensive error checking and type validation
-
-## Next Steps (Phase 2)
-
-1. **Implement Bundle Specialist Agent** - Complex DAB generation workflows
-2. **Create Deployment Manager Agent** - Validation and deployment coordination
-3. **Add Conversation Context Management** - Persistent state across interactions
-4. **Build Multi-step Workflow Coordination** - Complex task orchestration
-5. **Enhanced Error Handling & Recovery** - Production-ready resilience
-
-## Phase 1 Achievement Summary ✅
-
-**Architecture Delivered:**
-- Complete modular agent system with 15 passing tests
-- Hybrid MCP bridge supporting local development and production deployment
-- Claude Code SDK integration with automatic API key management
-- TDD-driven development with clean, maintainable code
-
-**Ready For:** Phase 2 specialist agent development and advanced workflow coordination
-
-This hybrid approach leverages your existing production infrastructure while adding the sophisticated agent capabilities needed for an intelligent DAB copilot system.
+This MVP approach delivers immediate value with intelligent DAB generation while providing a solid foundation for future enhancements.
