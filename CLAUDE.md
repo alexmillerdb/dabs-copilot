@@ -1,86 +1,73 @@
-# I am working on creating a Databricks Asset Bundles Co-pilot application that uses Claude Code and MCP to generate bundles to validate and deploy in dev. The goal is to allow users to generate bundles from existing jobs or pipelines. And also generate bundles by analyzing code located in Databricks workspace. Please create a simple but effective CLAUDE.md file to help claude code generate bundles.
+Databricks Bundles Co‑pilot — CLAUDE.md
 
-Here is a concise CLAUDE.md you can add to your repo to guide Claude Code (via MCP) to generate Databricks Asset Bundles from existing jobs/pipelines or by analyzing workspace code.
+## Purpose
 
-Databricks Bundles Co-pilot — CLAUDE.md
+- Generate, validate, and (optionally) deploy Databricks Asset Bundles (DAB) to a dev target.
+- Support two entry paths: derive from existing Jobs/Pipelines or infer from workspace code.
 
-### Purpose
+## Assumptions
 
-- Help Claude Code generate, validate, and deploy Databricks Asset Bundles (DAB) to a dev target.
-- Support two entry paths: derive a bundle from existing Jobs/Pipelines, or infer a bundle by analyzing code in the Databricks workspace.
+- Databricks CLI is authenticated (profile) or environment variables are set; otherwise MCP Databricks tools provide access.
+- Default target is dev unless specified.
+- Output goes to a new bundle directory; do not modify unrelated files.
 
+## Core Use Cases
 
-### Assumptions
+### 1) Job → Bundle
+- Input: Databricks Job ID or name.
+- Steps: Fetch job config → analyze referenced notebooks/files → generate bundle → validate.
+- Output: `databricks.yml` with appropriate clusters, tasks, variables.
 
-- Databricks CLI is authenticated locally, or MCP Databricks tools provide equivalent access.
-- Default target is dev only. Additional targets are out of scope unless explicitly requested.
-- Git workspace is clean; output will be generated in a new bundle directory.
+### 2) Workspace Path → Bundle
+- Input: Workspace path(s), e.g., `/Workspace/Users/...` or `/Workspace/Repos/...`.
+- Steps: List/export notebooks → analyze code patterns and dependencies → generate bundle → upload/validate.
+- Output: Multi-resource bundle based on detected workload (jobs, pipelines).
 
+## Inputs To Request When Missing
 
-### Available tools
+- Workspace host/profile (dev target).
+- Source: Job/Pipeline ID or workspace path(s).
+- Bundle name and destination directory.
+- Cluster/runtime preferences and any variable/secret placeholders.
 
-- MCP Databricks: list/get Jobs, Pipelines, Workspace files.
-- Filesystem: read/write project files.
-- Shell: run databricks bundle validate and deploy.
-- Git: create branches/commits (optional).
+## Available Tools (via MCP)
 
+- Jobs/workspace basics: `list_jobs`, `get_job`, `run_job`, `list_notebooks`, `export_notebook`, `execute_dbsql`, `list_warehouses`, `list_dbfs_files`, `get_cluster`, `health`.
+- DAB generation/validation: `analyze_notebook`, `generate_bundle`, `generate_bundle_from_job`, `validate_bundle`.
+- Workspace bundle ops: `upload_bundle`, `run_bundle_command`, `sync_workspace_to_local`.
+- Filesystem write when needed to create `databricks.yml`.
 
-### Inputs Claude can ask for
+## Workflow Overview
 
-- Databricks workspace host and profile to target for dev.
-- Source selection:
-    - Existing Job name/ID or Pipeline name/ID
-    - Workspace path(s) to analyze (e.g., /Workspace/Repos/... or /Workspace/Users/...)
-- Bundle name and destination folder (e.g., bundles/my-app).
-- Default cluster policy or runtime, and any secret/variable placeholders.
+1. Plan: confirm source (Job/Pipeline vs. workspace path) and gather missing inputs.
+2. Discover:
+   - Job flow: call `get_job(job_id)` and collect notebook/python entrypoints from tasks.
+   - Workspace flow: call `list_notebooks(path, recursive)` and `export_notebook` as needed.
+3. Analyze: for each entrypoint, call `analyze_notebook(notebook_path)` to infer workflow type, libraries, parameters.
+4. Synthesize: call `generate_bundle(bundle_name, file_paths, output_path)` (or `generate_bundle_from_job(job_id, output_dir)` when appropriate). Write the resulting `databricks.yml`.
+5. Validate: call `validate_bundle(bundle_path, target=dev)`. If errors, fix and re-validate.
+6. Deliver: optionally `upload_bundle(yaml_content, bundle_name)` and provide next steps; otherwise return local path and README.
 
+Error Recovery (apply as needed)
+- Authentication issues: prompt for profile/host or token; rerun `health`.
+- Missing resources: suggest alternatives or ask for corrected IDs/paths.
+- Validation failures: surface exact errors, propose minimal edits, re-validate.
 
-### Workflow overview
+## Generation Guidance
 
-- Plan: Confirm path (existing Job/Pipeline vs. workspace code analysis). Ask for minimal missing inputs.
-- Discover: Use MCP to fetch definitions and/or scan workspace code and metadata.
-- Synthesize: Create a minimal, valid bundle with resources.jobs and/or resources.pipelines, shared clusters if needed, targets.dev, variables, and artifacts when applicable.
-- Validate: Run databricks bundle validate and fix errors.
-- Deploy: Run databricks bundle deploy -t dev after user confirmation.
-- Deliver: Produce a ready-to-run directory with README and clear next steps.
+### From Existing Job
+- Use complete job settings (tasks, clusters, schedules, permissions) from `get_job`.
+- Keep required IDs; prefer readable names elsewhere.
+- For `new_cluster`: either inline under `job_clusters` or promote to `resources.clusters` and reference by key.
+- Extract libraries, task params, and environment (spark_version, node_type, policy, init scripts).
+- Parameterize environment-specific values; reference secrets rather than inlining.
 
+### From Workspace Code
+- Detect entrypoints: notebooks, DLT usage, SQL/Python tasks, wheels.
+- Infer jobs/tasks from entrypoints; keep clusters minimal (prefer serverless/small where sensible).
+- Add `artifacts` only when necessary (e.g., building wheels); otherwise reference workspace paths.
 
-### Generate from existing Job
-
-- Fetch full Job settings (including tasks, clusters, schedules, permissions).
-- Prefer referencing names over opaque IDs when allowed; where IDs are required, keep them as-is.
-- If the Job defines new_cluster, either:
-    - Inline under the Job’s job_clusters with a job_cluster_key, or
-    - Promote to resources.clusters and reference by key.
-- Extract libraries, task parameters, and environment (spark_version, node_type, policy, init scripts).
-- Create variables for any environment-specific values (paths, instance profiles, external locations).
-- Map secrets to secret references, not literal values.
-
-
-### Generate from existing Pipeline
-
-- Fetch Pipeline configuration (clusters, libraries, configuration).
-- Include libraries as bundle artifacts or direct workspace paths.
-- Preserve edition, channel, photon, and expected trigger settings.
-- Parameterize storage locations and path-like config fields via variables where practical.
-
-
-### Generate from workspace code
-
-- Scan selected paths to identify entry points:
-    - DLT pipelines (look for dlt usage or pipeline settings)
-    - Notebook jobs (notebooks ending with .py or .ipynb)
-    - Python/SQL tasks, wheels, or requirements.txt
-- Infer:
-    - One or more jobs with tasks mapped to detected notebooks/entrypoints
-    - Shared cluster or job-specific clusters (keep minimal, default to serverless or a small runtime if unspecified)
-    - Artifacts section if building wheels or packaging local code
-- Add variables for external resources and absolute paths.
-
-
-### Bundle skeleton to emit
-
-Use this as a minimal template; expand only as needed by the discovered resources.
+## Minimal Bundle Skeleton
 
 ```yaml
 bundle:
@@ -91,7 +78,7 @@ variables:
     description: Base workspace path for code
     default: /Workspace/Repos/your-org/your-repo
   default_storage_location:
-    description: External storage or base path for outputs
+    description: External storage for outputs
     default: dbfs:/tmp/{{BUNDLE_NAME}}
 
 targets:
@@ -118,69 +105,43 @@ resources:
           notebook_task:
             notebook_path: ${var.project_root}/jobs/main
           libraries: []
-      schedule: null
-
-  pipelines:
-    {{PIPELINE_KEY}}:
-      name: {{BUNDLE_NAME}} - dev pipeline
-      clusters:
-        - label: default
-          num_workers: 1
-      libraries: []
-      configuration:
-        pipeline_storage: ${var.default_storage_location}
 ```
 
+## Validation, Deployment, Upload
 
-### Recommended project layout
+- Validate: `databricks bundle validate`
+- Deploy (dev): `databricks bundle deploy -t dev`
+- Optional upload: use `upload_bundle(yaml_content, bundle_name)` and show workspace path + next steps.
 
-- bundles/{{BUNDLE_NAME}}/bundle.yml
-- bundles/{{BUNDLE_NAME}}/resources/jobs.yml (optional split)
-- bundles/{{BUNDLE_NAME}}/resources/pipelines.yml (optional split)
-- bundles/{{BUNDLE_NAME}}/README.md
-- .gitignore (exclude build/outputs as needed)
+## Response Guidelines
 
+- Progress: concise, step-by-step updates (e.g., “Analyzing 2/3 notebooks…”).
+- Results: show structured outputs for tool calls (tables for jobs, JSON for configs).
+- Errors: be explicit, propose the exact fix, then retry.
 
-### Validation and deployment
+## Quality & Security Standards
 
-- Run:
-    - databricks bundle validate
-    - databricks bundle deploy -t dev
-- If validation fails, update bundle.yml to address missing fields, bad IDs, or unsupported settings.
-- Optionally, run a smoke test:
-    - databricks bundle run {{JOB_KEY}} -t dev
-    - Or trigger the pipeline run if applicable.
+- Minimal first: include only necessary resources.
+- Parameterize environment- or path-like values under `variables`.
+- No secrets in plain text; use scopes/secret references.
+- Consistent naming (kebab-case keys, readable resource names).
+- Include a short README with validate/deploy/run instructions.
 
-
-### Quality checks
-
-- Minimal first: only include resources that exist and are needed.
-- Prefer variables for anything workspace-specific or path-like.
-- Do not embed secrets; use secret scopes or reference variables.
-- Keep names consistent; use kebab-case keys and readable resource names.
-- Include a short README with how to validate, deploy, and where to edit.
-
-
-### Example README content
+## README Snippet
 
 ```markdown
 # {{BUNDLE_NAME}} (dev)
 
 Commands:
 - Validate: `databricks bundle validate`
-- Deploy (dev): `databricks bundle deploy -t dev`
+- Deploy: `databricks bundle deploy -t dev`
 
-Edit bundle settings in `bundle.yml`. Update variables under `variables:` or set via environment/CLI.
+Edit bundle settings in `databricks.yml`. Update variables under `variables:` or set via environment/CLI.
 ```
 
+## When To Ask
 
-### When to ask for help
-
-- Missing workspace host/profile or ambiguous source selection.
-- Conflicting or incomplete Job/Pipeline definitions.
-- Required cluster policy/runtime not provided.
-- Permission or API errors from MCP/CLI.
-
-***
-
-Would you like the default flow to prioritize “generate from existing Job/Pipeline” when both code and existing resources are available, and what workspace host/profile should be set for the dev target?
+- Missing host/profile or ambiguous source selection.
+- Conflicting/incomplete job/pipeline definitions.
+- Required cluster/runtime not provided.
+- MCP/CLI permission or API errors.
