@@ -5,7 +5,7 @@ A conversational AI-powered web application that generates Databricks Asset Bund
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.11+
 - Databricks CLI configured with your workspace
 - Claude API key
 - Virtual environment (recommended)
