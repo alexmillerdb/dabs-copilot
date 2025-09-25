@@ -87,19 +87,24 @@ async def stream_chat_response(request: ChatRequest) -> AsyncGenerator[str, None
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
-                            assistant_content.append(block.text)
-                            yield _format_sse_message({
-                                "type": "message",
-                                "content": block.text,
-                                "timestamp": datetime.now().isoformat()
-                            })
+                            # Filter out raw tool result strings
+                            text = block.text
+                            if text and not text.startswith('{"type":') and not text.startswith('data:'):
+                                assistant_content.append(text)
+                                yield _format_sse_message({
+                                    "type": "message",
+                                    "content": text,
+                                    "timestamp": datetime.now().isoformat()
+                                })
                         elif isinstance(block, ToolUseBlock):
                             tools_used.append(block.name)
+                            # Format tool name nicely
+                            tool_display = block.name.replace('mcp__databricks-mcp__', '')
                             yield _format_sse_message({
                                 "type": "tool_use",
-                                "tool": block.name,
+                                "tool": tool_display,
                                 "status": "starting",
-                                "inputs": block.input
+                                "inputs": block.input if isinstance(block.input, dict) else {}
                             })
                 
                 # Handle tool results and file generation
@@ -107,17 +112,29 @@ async def stream_chat_response(request: ChatRequest) -> AsyncGenerator[str, None
                     for block in message.content:
                         if isinstance(block, ToolResultBlock):
                             tool_name = getattr(block, "name", "")
-                            
+
                             # Check if this tool generated files
                             if _tool_generates_files(tool_name) and block.content:
-                                file_path = _extract_file_path(block.content)
+                                # Extract content string from ToolResultBlock
+                                content_str = ""
+                                if hasattr(block.content, 'text'):
+                                    content_str = block.content.text
+                                elif isinstance(block.content, str):
+                                    content_str = block.content
+                                elif isinstance(block.content, list) and block.content:
+                                    # Handle list of content blocks
+                                    for item in block.content:
+                                        if hasattr(item, 'text'):
+                                            content_str += item.text + "\n"
+
+                                file_path = _extract_file_path(content_str)
                                 if file_path and Path(file_path).exists():
                                     file_id = generate_file_id(file_path)
                                     filename = Path(file_path).name
                                     download_url = f"/api/files/{file_id}"
-                                    
+
                                     files_generated.append(filename)
-                                    
+
                                     # Add to conversation state
                                     generated_file = GeneratedFile(
                                         filename=filename,
@@ -126,7 +143,7 @@ async def stream_chat_response(request: ChatRequest) -> AsyncGenerator[str, None
                                         created_at=datetime.now()
                                     )
                                     conversation.generated_files.append(generated_file)
-                                    
+
                                     yield _format_sse_message({
                                         "type": "file_generated",
                                         "filename": filename,
@@ -178,14 +195,32 @@ def _tool_generates_files(tool_name: str) -> bool:
 
 def _extract_file_path(tool_result: str) -> str:
     """Extract file path from tool result content"""
-    # This is a simple implementation - would need more sophisticated parsing
-    # for production use based on actual tool response formats
+    import json
+    import re
+
+    # Try to parse as JSON first (for structured MCP responses)
+    try:
+        if tool_result.strip().startswith('{'):
+            data = json.loads(tool_result)
+            # Look for common file path fields
+            for key in ['output_path', 'file_path', 'path', 'bundle_path']:
+                if key in data and data[key]:
+                    return data[key]
+    except:
+        pass
+
+    # Fallback to text parsing
     lines = tool_result.split('\n')
     for line in lines:
-        if 'bundle' in line.lower() and ('.zip' in line or '.yml' in line):
-            # Extract path-like strings
+        # Look for patterns like "Created bundle at: /path/to/bundle.zip"
+        match = re.search(r'(?:created|generated|saved|written|output).*?([\w\-\/\.]+\.(?:zip|yml|yaml))', line, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+        # Look for any path ending with .zip or .yml
+        if 'bundle' in line.lower() and ('.zip' in line or '.yml' in line or '.yaml' in line):
             words = line.split()
             for word in words:
-                if '/' in word and ('bundle' in word or word.endswith(('.zip', '.yml'))):
+                if '/' in word and word.endswith(('.zip', '.yml', '.yaml')):
                     return word.strip('",')
     return ""
