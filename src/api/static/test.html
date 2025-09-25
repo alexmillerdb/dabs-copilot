@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAB Generator Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .chat-box {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            margin-bottom: 20px;
+            background: #f9f9f9;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            max-width: 80%;
+        }
+        .user {
+            background: #007acc;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .assistant {
+            background: white;
+            border: 1px solid #eee;
+        }
+        .error {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c00;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        .input-area button {
+            padding: 10px 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .input-area button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 6px;
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 DAB Generator Test</h1>
+    
+    <div class="status" id="status">
+        <strong>Status:</strong> <span id="status-text">Checking connection...</span>
+    </div>
+    
+    <div class="chat-box" id="chat-box"></div>
+    
+    <div class="input-area">
+        <input 
+            type="text" 
+            id="message-input" 
+            placeholder="Type your message here..."
+            maxlength="500"
+        >
+        <button id="test-btn">Test Mock</button>
+        <button id="send-btn">Send Real</button>
+    </div>
+    
+    <div style="margin-top: 20px; font-size: 0.9em; color: #666;">
+        <p><strong>Test Mock:</strong> Uses /api/test-chat (no Claude required)</p>
+        <p><strong>Send Real:</strong> Uses /api/chat (requires Claude API key)</p>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message-input');
+        const testBtn = document.getElementById('test-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const statusText = document.getElementById('status-text');
+        
+        // Check API health
+        async function checkHealth() {
+            try {
+                const response = await fetch('/api/health');
+                const data = await response.json();
+                statusText.textContent = `API ${data.status}, Claude: ${data.claude_configured ? 'YES' : 'NO'}, Databricks: ${data.databricks_connected ? 'YES' : 'NO'}`;
+            } catch (error) {
+                statusText.textContent = 'Connection failed: ' + error.message;
+            }
+        }
+        
+        // Add message to chat
+        function addMessage(content, type = 'assistant') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = content;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        
+        // Send message to endpoint
+        async function sendMessage(endpoint) {
+            const message = messageInput.value.trim();
+            if (!message) return;
+            
+            // Add user message
+            addMessage(message, 'user');
+            messageInput.value = '';
+            
+            // Disable buttons
+            testBtn.disabled = true;
+            sendBtn.disabled = true;
+            
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                // Read streaming response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                handleStreamMessage(data);
+                            } catch (e) {
+                                console.warn('Failed to parse:', line);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                addMessage(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                testBtn.disabled = false;
+                sendBtn.disabled = false;
+            }
+        }
+        
+        // Handle streaming messages
+        function handleStreamMessage(data) {
+            switch (data.type) {
+                case 'message':
+                    addMessage(data.content);
+                    break;
+                case 'tool_use':
+                    addMessage(`⚡ Using tool: <strong>${data.tool}</strong>`);
+                    break;
+                case 'error':
+                    addMessage(`❌ Error: ${data.content}`, 'error');
+                    break;
+                case 'complete':
+                    addMessage(`✅ Conversation complete (ID: ${data.conversation_id})`);
+                    break;
+                default:
+                    console.log('Unknown message type:', data);
+            }
+        }
+        
+        // Event listeners
+        testBtn.addEventListener('click', () => sendMessage('/api/test-chat'));
+        sendBtn.addEventListener('click', () => sendMessage('/api/chat'));
+        
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage('/api/test-chat');
+            }
+        });
+        
+        // Initialize
+        checkHealth();
+        addMessage('👋 Welcome! Use the buttons below to test the chat API.', 'assistant');
+    </script>
+</body>
+</html>

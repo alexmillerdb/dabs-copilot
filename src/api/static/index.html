@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAB Generator - Databricks Asset Bundle Co-pilot</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Background Elements -->
+    <div class="background-elements">
+        <div class="bg-gradient"></div>
+        <div class="bg-pattern"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="brand">
+                    <div class="brand-icon">
+                        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                            <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
+                            <path d="M8 12h16v8H8z" fill="white" opacity="0.9"/>
+                            <path d="M12 8v16M20 8v16" stroke="white" stroke-width="2" opacity="0.7"/>
+                            <defs>
+                                <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#FF6B35"/>
+                                    <stop offset="100%" style="stop-color:#FF8E53"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <div class="brand-text">
+                        <h1 class="brand-title">DAB Generator</h1>
+                        <p class="brand-subtitle">Databricks Asset Bundle Co-pilot</p>
+                    </div>
+                </div>
+                
+                <div class="header-status">
+                    <div id="status-indicator" class="status-indicator">
+                        <div class="status-dot checking"></div>
+                        <span class="status-text">Connecting...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Chat Area -->
+        <main class="chat-main">
+            <div class="chat-container">
+                <div id="messages-container" class="messages-container">
+                    <!-- Welcome Card -->
+                    <div class="welcome-card">
+                        <div class="welcome-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                            </svg>
+                        </div>
+                        <div class="welcome-content">
+                            <h2>Welcome to DAB Generator!</h2>
+                            <p>I can help you create optimized Databricks Asset Bundles from existing jobs, pipelines, or workspace code using natural language.</p>
+                            
+                            <div class="example-section">
+                                <h3>Try these examples:</h3>
+                                <div class="examples-grid">
+                                    <button class="example-card" data-prompt="Generate a bundle from job 662067900958232">
+                                        <div class="example-icon">📦</div>
+                                        <div class="example-text">
+                                            <div class="example-title">Convert Job to Bundle</div>
+                                            <div class="example-desc">Generate a bundle from job 662067900958232</div>
+                                        </div>
+                                    </button>
+                                    
+                                    <button class="example-card" data-prompt="Create bundles for /Workspace/Users/alex/ml-project/">
+                                        <div class="example-icon">🧠</div>
+                                        <div class="example-text">
+                                            <div class="example-title">Analyze Workspace</div>
+                                            <div class="example-desc">Create bundles from workspace code</div>
+                                        </div>
+                                    </button>
+                                    
+                                    <button class="example-card" data-prompt="Convert my streaming job with smaller clusters for development">
+                                        <div class="example-icon">⚡</div>
+                                        <div class="example-text">
+                                            <div class="example-title">Optimize Configuration</div>
+                                            <div class="example-desc">Adjust cluster sizes and settings</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Typing Indicator -->
+                <div id="typing-indicator" class="typing-indicator hidden">
+                    <div class="message-bubble assistant">
+                        <div class="message-avatar">
+                            <div class="avatar-gradient"></div>
+                            <span class="avatar-icon">🤖</span>
+                        </div>
+                        <div class="message-content">
+                            <div class="typing-animation">
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                                <div class="typing-dot"></div>
+                            </div>
+                            <span class="typing-text">Claude is thinking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <footer class="input-footer">
+            <div class="input-container">
+                <form id="chat-form" class="chat-form">
+                    <div class="input-wrapper">
+                        <div class="input-field">
+                            <textarea
+                                id="message-input"
+                                class="message-textarea"
+                                placeholder="Ask me to generate bundles, analyze code, or optimize configurations..."
+                                rows="1"
+                                maxlength="2000"
+                                spellcheck="true"
+                            ></textarea>
+                            <div class="input-actions">
+                                <div class="char-count">
+                                    <span id="char-counter">0</span><span class="char-limit">/2000</span>
+                                </div>
+                                <button type="submit" id="send-button" class="send-button" disabled>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="input-help">
+                            <div class="help-text">
+                                <span class="help-icon">💡</span>
+                                <span>Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line</span>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Initializing DAB Generator...</div>
+        </div>
+    </div>
+
+    <script src="/static/chat.js"></script>
+</body>
+</html>
