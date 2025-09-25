@@ -7,6 +7,7 @@ Combines Phase 1 (core tools) and Phase 2 (DAB generation) tools
 import asyncio
 import logging
 from tools import mcp
+from dotenv import load_dotenv
 
 # Import DAB tools to register them with the MCP server
 # This adds analyze_notebook, generate_bundle, validate_bundle, create_tests
@@ -22,6 +23,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 async def main():
     """Run MCP server with all available tools"""

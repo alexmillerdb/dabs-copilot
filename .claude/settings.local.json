@@ -3,9 +3,14 @@
     "allow": [
       "Bash(python test:*)",
       "Bash(python:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "WebFetch(domain:docs.claude.com)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "databricks-mcp"
+  ]
 }

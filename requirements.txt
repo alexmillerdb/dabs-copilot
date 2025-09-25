@@ -1,6 +1,9 @@
 # Databricks Core Dependencies
 databricks-connect==17.1.2
 databricks-sdk==0.65.0
+
+# Claude SDK
+claude-code-sdk==0.0.23
 # Note: Databricks CLI v2 is a standalone binary, install separately:
 # curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
 
