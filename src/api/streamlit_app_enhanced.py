@@ -270,6 +270,7 @@ def display_enhanced_sidebar():
         st.write(f"{status_color} Claude: {'Ready' if env['claude_configured'] else 'Missing API Key'}")
         st.write(f"🏢 Databricks: {env['databricks_host'] or 'Not configured'}")
         st.write(f"👤 Profile: {env['databricks_profile']}")
+        st.write(f"🔐 OAuth: {'Available' if env.get('oauth_available') else 'Not available'}")
 
         st.divider()
 
@@ -328,17 +329,31 @@ def display_enhanced_sidebar():
                 st.write(f"📄 {file_info.get('name', 'Unknown')}")
                 st.caption(f"Created: {file_info.get('created', 'Unknown')}")
 
+def get_oauth_token() -> str:
+    """Get OAuth token from Databricks Apps context"""
+    try:
+        if hasattr(st, 'context') and hasattr(st.context, 'headers'):
+            token = st.context.headers.get("x-forwarded-access-token")
+            if token:
+                print("🔐 OAuth token found in Databricks Apps context")
+                return token
+    except Exception as e:
+        print(f"⚠️ Could not get OAuth token from Apps context: {e}")
+    return None
+
 def check_environment():
     """Check environment status"""
     claude_key = os.getenv("CLAUDE_API_KEY")
     databricks_host = os.getenv("DATABRICKS_HOST")
     databricks_profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
+    oauth_token = get_oauth_token()
 
     return {
         'claude_configured': bool(claude_key),
         'databricks_host': databricks_host,
         'databricks_profile': databricks_profile,
-        'client_available': CLIENT_AVAILABLE
+        'client_available': CLIENT_AVAILABLE,
+        'oauth_available': bool(oauth_token)
     }
 
 async def process_enhanced_chat_message(message: str):
@@ -360,7 +375,8 @@ async def process_enhanced_chat_message(message: str):
     progress_container = st.container()
 
     try:
-        client = await create_chat_client()
+        oauth_token = get_oauth_token()
+        client = await create_chat_client(oauth_token=oauth_token)
 
         with status_container:
             st.info("🤖 Processing your request...")

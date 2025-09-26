@@ -9,15 +9,39 @@ project_root = Path(__file__).parent.parent.parent
 dotenv_path = project_root / ".env"
 load_dotenv(dotenv_path)
 
-def build_chat_options() -> ClaudeCodeOptions:
-    """Build Claude options for chat-based DAB generation"""
-    project_root = Path(__file__).parent.parent.parent
-    mcp_server_path = project_root / "mcp" / "server" / "main.py"
+def get_databricks_token(token: str = None) -> str:
+    """Get OAuth token for MCP server authentication
 
-    # Debug: Print paths to verify
+    Args:
+        token: Optional OAuth token from Databricks Apps. If not provided,
+               falls back to profile-based authentication.
+    """
+    if token:
+        print("🔐 Using provided OAuth token (Databricks Apps)")
+        return token
+
+    # Fall back to profile-based authentication for local development
+    from databricks.sdk import WorkspaceClient
+    profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
+    print(f"🔐 Using profile-based authentication: {profile}")
+    workspace_client = WorkspaceClient(profile=profile)
+    return workspace_client.config.token
+
+def build_chat_options(oauth_token: str = None) -> ClaudeCodeOptions:
+    """Build Claude options for chat-based DAB generation
+
+    Args:
+        oauth_token: Optional OAuth token from Databricks Apps
+    """
+    project_root = Path(__file__).parent.parent.parent
+
+    mcp_server_url = os.getenv(
+        "MCP_REMOTE_URL",
+        "https://databricks-mcp-server-1444828305810485.aws.databricksapps.com",
+    )
+
     print(f"🐞 Project root: {project_root}")
-    print(f"🐞 MCP server path: {mcp_server_path}")
-    print(f"🐞 MCP server exists: {mcp_server_path.exists()}")
+    print(f"🐞 MCP server URL: {mcp_server_url}")
     print(f"🐞 Current working directory: {Path.cwd()}")
     
     # Pre-approve Databricks MCP tools so the agent can use them without extra prompting
@@ -49,21 +73,17 @@ def build_chat_options() -> ClaudeCodeOptions:
         "mcp__databricks-mcp__sync_workspace_to_local",
     ]
     
-    # Environment configuration for MCP server
-    mcp_env = {
-        "DATABRICKS_CONFIG_PROFILE": os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT"),
-        "DATABRICKS_HOST": os.getenv("DATABRICKS_HOST", ""),
-    }
-    
     return ClaudeCodeOptions(
         model="claude-sonnet-4-20250514",
-        cwd=str(project_root),  # Set to project root for MCP server
+        cwd=str(project_root),
         mcp_servers={
             "databricks-mcp": {
-                "command": "python",
-                "args": [str(mcp_server_path)],
-                "env": mcp_env,
-                "cwd": str(project_root),  # Ensure MCP server runs from project root
+                "command": "http_client",
+                "url": f"{mcp_server_url}/mcp",
+                "auth": {
+                    "type": "bearer",
+                    "token": get_databricks_token(oauth_token),
+                },
             }
         },
         allowed_tools=allowed_tools,
@@ -77,7 +97,11 @@ def build_chat_options() -> ClaudeCodeOptions:
         ),
     )
 
-async def create_chat_client() -> ClaudeSDKClient:
-    """Create a new Claude SDK client for chat conversations"""
-    options = build_chat_options()
+async def create_chat_client(oauth_token: str = None) -> ClaudeSDKClient:
+    """Create a new Claude SDK client for chat conversations
+
+    Args:
+        oauth_token: Optional OAuth token from Databricks Apps
+    """
+    options = build_chat_options(oauth_token)
     return ClaudeSDKClient(options=options)

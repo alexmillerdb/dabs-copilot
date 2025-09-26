@@ -57,8 +57,11 @@ def create_error_response(error: str) -> str:
 async def health() -> str:
     """Check server and Databricks connection health"""
     try:
+        logger.info("Health check called - attempting to get workspace client")
         workspace_client = get_or_create_client()
+        logger.info(f"Workspace client result: {workspace_client}")
         if not workspace_client:
+            logger.error("Workspace client is None - returning error")
             return create_error_response("Databricks client not initialized")
         
         # Test connection by getting current user

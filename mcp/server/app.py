@@ -14,8 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root
+project_root = Path(__file__).parent.parent.parent
+dotenv_path = project_root / ".env"
+load_dotenv(dotenv_path)
 
 def load_config():
     """Load configuration from config.yaml"""
