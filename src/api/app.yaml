@@ -1,0 +1,16 @@
+app_name: dab-generator
+
+# Streamlit application for Databricks Asset Bundle generation
+command:
+  - streamlit
+  - run
+  - app.py
+
+# Environment configuration
+env:
+  - name: CLAUDE_API_KEY
+    value_from: dab_generator_claude_key
+  - name: MCP_REMOTE_URL
+    value: https://databricks-mcp-server-1444828305810485.aws.databricksapps.com
+  - name: DATABRICKS_CONFIG_PROFILE
+    value: aws-apps

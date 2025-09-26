@@ -1,6 +1,13 @@
+# Core dependencies for Streamlit app
+streamlit>=1.31.0
+claude-code-sdk>=0.0.23
+python-dotenv>=1.0.0
+
+# Databricks integration
+databricks-sdk>=0.20.0
+
+# API dependencies (if needed for future FastAPI integration)
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.5.0
-python-dotenv>=1.0.0
-claude-code-sdk>=0.0.23
 python-multipart>=0.0.6

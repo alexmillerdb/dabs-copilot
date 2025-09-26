@@ -71,7 +71,7 @@ async def test_oauth_authentication():
         mock_context.headers = {"x-forwarded-access-token": "databricks-apps-oauth-token"}
 
         # Import after patching to test Streamlit context detection
-        from streamlit_app_enhanced import get_oauth_token
+        from app import get_oauth_token
 
         try:
             token = get_oauth_token()
