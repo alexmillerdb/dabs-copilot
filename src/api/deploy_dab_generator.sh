@@ -60,37 +60,77 @@ check_status "Databricks CLI authenticated with profile: $PROFILE"
 echo -e "${YELLOW}3️⃣ Setting up secrets...${NC}"
 echo -e "Checking if Claude API key secret exists..."
 
-# Check if secret exists (will fail silently if not)
-if ! databricks secrets get --profile $PROFILE --scope apps --key dab_generator_claude_key > /dev/null 2>&1; then
-    echo -e "${YELLOW}Creating secret scope and key...${NC}"
+# First, ensure the secret scope exists
+SCOPE_EXISTS=$(databricks secrets list-scopes --profile $PROFILE 2>/dev/null | grep -c "dabscribe" || true)
 
-    # Create scope if it doesn't exist
-    databricks secrets create-scope --profile $PROFILE --scope apps 2>/dev/null || true
+if [ "$SCOPE_EXISTS" -eq 0 ]; then
+    echo -e "${YELLOW}Creating secret scope 'dabscribe'...${NC}"
+    databricks secrets create-scope dabscribe --profile $PROFILE
+    check_status "Secret scope 'dabscribe' created"
+else
+    echo -e "${GREEN}✅ Secret scope 'dabscribe' already exists${NC}"
+fi
 
-    # Prompt for API key
-    echo -n "Enter your Claude API key: "
-    read -s CLAUDE_KEY
-    echo ""
+# Check if secret exists
+SECRET_EXISTS=$(databricks secrets list-secrets dabscribe --profile $PROFILE 2>/dev/null | grep -c "dab_generator_claude_key" || true)
 
-    # Create secret
-    echo "$CLAUDE_KEY" | databricks secrets put --profile $PROFILE --scope apps --key dab_generator_claude_key --string-value
+if [ "$SECRET_EXISTS" -eq 0 ]; then
+    echo -e "${YELLOW}Creating Claude API key secret...${NC}"
+
+    # Check if we have the key in .env file
+    if [ -f "$APP_DIR/../../.env" ] && grep -q "CLAUDE_API_KEY=" "$APP_DIR/../../.env"; then
+        echo -e "${GREEN}Found Claude API key in .env file${NC}"
+        CLAUDE_KEY=$(grep "CLAUDE_API_KEY=" "$APP_DIR/../../.env" | cut -d '=' -f2)
+    else
+        # Prompt for API key
+        echo -n "Enter your Claude API key: "
+        read -s CLAUDE_KEY
+        echo ""
+    fi
+
+    # Create secret using the correct syntax
+    echo -n "$CLAUDE_KEY" | databricks secrets put-secret dabscribe dab_generator_claude_key --profile $PROFILE
     check_status "Claude API key secret created"
 else
     echo -e "${GREEN}✅ Claude API key secret already exists${NC}"
 fi
 
-# Step 4: Deploy the app
-echo -e "${YELLOW}4️⃣ Deploying app to Databricks Apps...${NC}"
+# Step 4: Sync code to workspace
+echo -e "${YELLOW}4️⃣ Syncing code to Databricks Workspace...${NC}"
 cd "$APP_DIR"
 
-# Deploy command
-databricks apps deploy $APP_NAME --profile $PROFILE
+# Define workspace path
+WORKSPACE_PATH="/Workspace/Users/alex.miller@databricks.com/$APP_NAME"
+echo -e "Workspace path: ${YELLOW}$WORKSPACE_PATH${NC}"
+
+# Sync files to workspace (without --watch for one-time sync)
+databricks sync . "$WORKSPACE_PATH" --profile $PROFILE
+check_status "Code synced to workspace"
+
+# Step 5: Create or deploy the app
+echo -e "${YELLOW}5️⃣ Creating/Deploying app to Databricks Apps...${NC}"
+
+# Check if app exists
+if databricks apps get $APP_NAME --profile $PROFILE > /dev/null 2>&1; then
+    echo -e "${GREEN}App exists, deploying update...${NC}"
+    # Deploy update to existing app with source code from workspace
+    databricks apps deploy $APP_NAME --source-code-path "$WORKSPACE_PATH" --profile $PROFILE
+else
+    echo -e "${YELLOW}App does not exist, creating new app...${NC}"
+    # Create new app
+    databricks apps create $APP_NAME --profile $PROFILE
+    check_status "App created successfully"
+
+    # Now deploy the app with source code from workspace
+    echo -e "${YELLOW}Deploying app code from workspace...${NC}"
+    databricks apps deploy $APP_NAME --source-code-path "$WORKSPACE_PATH" --profile $PROFILE
+fi
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ App deployed successfully!${NC}"
 
     # Get app URL
-    echo -e "${YELLOW}5️⃣ Getting app URL...${NC}"
+    echo -e "${YELLOW}6️⃣ Getting app URL...${NC}"
     APP_INFO=$(databricks apps get $APP_NAME --profile $PROFILE 2>/dev/null || true)
 
     if [ ! -z "$APP_INFO" ]; then
@@ -111,13 +151,20 @@ else
     exit 1
 fi
 
-# Step 5: Monitor deployment (optional)
+# Step 6: Monitor deployment (optional)
 echo ""
-echo -e "${YELLOW}To monitor your app:${NC}"
-echo "databricks apps logs $APP_NAME --profile $PROFILE --follow"
+echo -e "${YELLOW}📋 Useful Commands:${NC}"
 echo ""
-echo -e "${YELLOW}To check app status:${NC}"
-echo "databricks apps get $APP_NAME --profile $PROFILE"
+echo -e "${GREEN}Monitor app logs:${NC}"
+echo "  databricks apps logs $APP_NAME --profile $PROFILE --follow"
 echo ""
-echo -e "${YELLOW}To redeploy after changes:${NC}"
-echo "./deploy_dab_generator.sh $PROFILE"
+echo -e "${GREEN}Check app status:${NC}"
+echo "  databricks apps get $APP_NAME --profile $PROFILE"
+echo ""
+echo -e "${GREEN}Redeploy after changes:${NC}"
+echo "  ./deploy_dab_generator.sh $PROFILE"
+echo ""
+echo -e "${GREEN}Development mode (continuous sync):${NC}"
+echo "  databricks sync --watch . $WORKSPACE_PATH --profile $PROFILE"
+echo ""
+echo -e "${YELLOW}💡 Tip:${NC} Run sync --watch in a separate terminal during development for live updates"

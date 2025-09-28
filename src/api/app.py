@@ -66,8 +66,8 @@ class Conversation:
 
 # Streamlit page config
 st.set_page_config(
-    page_title="DAB Generator",
-    page_icon="🚀",
+    page_title="DABscribe",
+    page_icon="✍️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -234,7 +234,7 @@ def display_conversation_history():
     conversation = get_current_conversation()
 
     if not conversation.messages:
-        st.info("👋 Start a new conversation! Try asking about bundle generation or workspace browsing.")
+        st.info("👋 Welcome to DABscribe! I'll help you write Databricks Asset Bundles. Try asking me to generate a bundle from a job or workspace path.")
         return
 
     # Conversation stats
@@ -260,7 +260,7 @@ def display_enhanced_sidebar():
     """Enhanced sidebar with conversation management"""
 
     with st.sidebar:
-        st.header("🔧 DAB Generator")
+        st.header("✍️ DABscribe")
 
         # Environment status
         env = check_environment()
@@ -529,8 +529,8 @@ def main():
     # Display header
     st.markdown("""
     <div class="main-header">
-        <h1>🚀 Databricks Asset Bundle Generator</h1>
-        <p>Enhanced with conversation management and state tracking</p>
+        <h1>✍️ DABscribe</h1>
+        <p>Writing your bundles, so you don't have to</p>
     </div>
     """, unsafe_allow_html=True)
 
