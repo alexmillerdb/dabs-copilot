@@ -1,6 +1,7 @@
 import os
+import subprocess
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from dotenv import load_dotenv
 
@@ -97,6 +98,56 @@ def build_chat_options(oauth_token: str = None) -> ClaudeCodeOptions:
         ),
     )
 
+def get_claude_cli_path() -> Optional[str]:
+    """Get the path to Claude CLI binary
+
+    Returns path in this order of precedence:
+    1. From claude_cli_path.txt file (Databricks Apps)
+    2. From CLAUDE_CLI_PATH environment variable
+    3. Try to find it in common locations
+    4. None if not found
+    """
+    current_dir = Path(__file__).parent
+
+    # Check for path file (created by setup script in Apps)
+    cli_path_file = current_dir / "claude_cli_path.txt"
+    if cli_path_file.exists():
+        cli_path = cli_path_file.read_text().strip()
+        if Path(cli_path).exists():
+            print(f"🔧 Using Claude CLI from path file: {cli_path}")
+            return cli_path
+
+    # Check environment variable
+    env_path = os.getenv("CLAUDE_CLI_PATH")
+    if env_path and Path(env_path).exists():
+        print(f"🔧 Using Claude CLI from env: {env_path}")
+        return env_path
+
+    # Check local node_modules
+    local_paths = [
+        current_dir / "claude_cli" / "node_modules" / ".bin" / "claude",
+        current_dir / "node_modules" / ".bin" / "claude",
+        Path.home() / "node_modules" / ".bin" / "claude",
+    ]
+
+    for path in local_paths:
+        if path.exists():
+            print(f"🔧 Found Claude CLI at: {path}")
+            return str(path)
+
+    # Try to find it in PATH
+    try:
+        result = subprocess.run(["which", "claude"], capture_output=True, text=True)
+        if result.returncode == 0:
+            cli_path = result.stdout.strip()
+            print(f"🔧 Found Claude CLI in PATH: {cli_path}")
+            return cli_path
+    except:
+        pass
+
+    print("⚠️ Claude CLI not found, will try default behavior")
+    return None
+
 async def create_chat_client(oauth_token: str = None) -> ClaudeSDKClient:
     """Create a new Claude SDK client for chat conversations
 
@@ -104,4 +155,20 @@ async def create_chat_client(oauth_token: str = None) -> ClaudeSDKClient:
         oauth_token: Optional OAuth token from Databricks Apps
     """
     options = build_chat_options(oauth_token)
+
+    # Try to get explicit CLI path and set it in environment
+    cli_path = get_claude_cli_path()
+
+    if cli_path:
+        # Set the PATH environment variable to include the CLI directory
+        cli_dir = os.path.dirname(cli_path)
+        current_path = os.environ.get('PATH', '')
+        if cli_dir not in current_path:
+            os.environ['PATH'] = f"{cli_dir}:{current_path}"
+        print(f"🚀 Added CLI directory to PATH: {cli_dir}")
+
+        # Also set explicit path for the SDK to use
+        os.environ['CLAUDE_CLI_PATH'] = cli_path
+        print(f"🚀 Set CLAUDE_CLI_PATH environment variable: {cli_path}")
+
     return ClaudeSDKClient(options=options)

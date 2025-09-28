@@ -1,10 +1,9 @@
 app_name: dab-generator
 
-# Streamlit application for Databricks Asset Bundle generation
+# DABscribe - Streamlit application for Databricks Asset Bundle generation
 command:
-  - streamlit
-  - run
-  - app.py
+  - bash
+  - start_app.sh
 
 # Environment configuration
 env:
