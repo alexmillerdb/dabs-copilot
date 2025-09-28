@@ -7,6 +7,8 @@ command:
 
 # Environment configuration
 env:
+  - name: PORT
+    value: "8000"  # Databricks Apps requires port 8000
   - name: CLAUDE_API_KEY
     value_from: dabscribe.dab_generator_claude_key
   - name: MCP_REMOTE_URL

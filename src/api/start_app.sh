@@ -20,6 +20,9 @@ if [ -f "$SCRIPT_DIR/claude_cli_path.txt" ]; then
     echo "✅ Claude CLI path: $CLAUDE_CLI_PATH"
 fi
 
+# Get port from environment variable or use 8000 as default (Databricks Apps requirement)
+PORT=${PORT:-8000}
+
 # Start Streamlit app
-echo "🎯 Starting Streamlit app..."
-exec streamlit run "$SCRIPT_DIR/app.py" --server.port=8663 --server.address=0.0.0.0
+echo "🎯 Starting Streamlit app on port $PORT..."
+exec streamlit run "$SCRIPT_DIR/app.py" --server.port=$PORT --server.address=0.0.0.0
