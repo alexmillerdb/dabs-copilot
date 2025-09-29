@@ -266,8 +266,8 @@ def display_enhanced_sidebar():
         env = check_environment()
         st.subheader("🔌 Status")
 
-        status_color = "🟢" if env['claude_configured'] and env['client_available'] else "🔴"
-        st.write(f"{status_color} Claude: {'Ready' if env['claude_configured'] else 'Missing API Key'}")
+        status_color = "🟢" if env.get('claude_valid', False) and env['client_available'] else "🔴"
+        st.write(f"{status_color} Claude: {env.get('claude_status', 'Unknown')}")
         st.write(f"🏢 Databricks: {env['databricks_host'] or 'Not configured'}")
         st.write(f"👤 Profile: {env['databricks_profile']}")
         st.write(f"🔐 OAuth: {'Available' if env.get('oauth_available') else 'Not available'}")
@@ -348,8 +348,22 @@ def check_environment():
     databricks_profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
     oauth_token = get_oauth_token()
 
+    # Validate API key
+    claude_valid = False
+    claude_status = "Missing"
+    if claude_key:
+        if claude_key.startswith("sk-ant-"):
+            claude_valid = True
+            # Mask the key for display
+            masked_key = f"{claude_key[:10]}...{claude_key[-4:]}"
+            claude_status = f"Valid ({masked_key})"
+        else:
+            claude_status = "Invalid format"
+
     return {
         'claude_configured': bool(claude_key),
+        'claude_valid': claude_valid,
+        'claude_status': claude_status,
         'databricks_host': databricks_host,
         'databricks_profile': databricks_profile,
         'client_available': CLIENT_AVAILABLE,
@@ -525,6 +539,21 @@ def main():
 
     # Initialize enhanced state
     init_enhanced_session_state()
+
+    # Validate API key on startup (only once per session)
+    if 'api_key_validated' not in st.session_state:
+        api_key = os.getenv("CLAUDE_API_KEY")
+        if api_key:
+            if api_key.startswith("sk-ant-"):
+                masked = f"{api_key[:10]}...{api_key[-4:]}"
+                print(f"✅ API key validated on startup: {masked}")
+                st.session_state.api_key_validated = True
+            else:
+                print("⚠️ API key found but invalid format")
+                st.session_state.api_key_validated = False
+        else:
+            print("❌ No API key found in environment")
+            st.session_state.api_key_validated = False
 
     # Display header
     st.markdown("""

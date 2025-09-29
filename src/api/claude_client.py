@@ -10,6 +10,27 @@ project_root = Path(__file__).parent.parent.parent
 dotenv_path = project_root / ".env"
 load_dotenv(dotenv_path)
 
+# Validate Claude API key is available
+def validate_api_key():
+    """Validate that Claude API key is available in environment"""
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        print("❌ CLAUDE_API_KEY not found in environment variables")
+        return False
+
+    # Check if it looks like a valid key (starts with sk-ant-)
+    if not api_key.startswith("sk-ant-"):
+        print("⚠️ CLAUDE_API_KEY found but doesn't start with 'sk-ant-'")
+        return False
+
+    # Mask the key for security
+    masked_key = f"{api_key[:10]}...{api_key[-4:]}"
+    print(f"✅ CLAUDE_API_KEY validated: {masked_key}")
+    return True
+
+# Run validation on import
+validate_api_key()
+
 def get_databricks_token(token: str = None) -> str:
     """Get OAuth token for MCP server authentication
 
