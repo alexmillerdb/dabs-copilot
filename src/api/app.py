@@ -62,6 +62,8 @@ class Conversation:
     created_at: datetime
     last_activity: datetime
     generated_files: List[Dict[str, Any]]
+    generated_yaml: Optional[str] = None  # Store the generated YAML content
+    yaml_validation_result: Optional[Dict[str, Any]] = None  # Store validation results
     metadata: Dict[str, Any] = None
 
     def __post_init__(self):
@@ -326,9 +328,47 @@ def display_enhanced_sidebar():
 
         st.divider()
 
+        # Generated YAML Bundle
+        if conversation.generated_yaml:
+            st.subheader("📋 Generated Bundle")
+
+            # YAML preview
+            with st.expander("📄 View databricks.yml", expanded=False):
+                st.code(conversation.generated_yaml, language='yaml')
+
+                # Download button
+                st.download_button(
+                    label="⬇️ Download databricks.yml",
+                    data=conversation.generated_yaml,
+                    file_name="databricks.yml",
+                    mime="text/yaml"
+                )
+
+            # Validation section
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Validate Bundle", help="Validate the YAML using Databricks tools"):
+                    asyncio.run(validate_yaml_bundle(conversation.generated_yaml))
+
+            with col2:
+                if conversation.yaml_validation_result:
+                    if conversation.yaml_validation_result.get('valid'):
+                        st.success("✅ Valid")
+                    else:
+                        st.error("❌ Invalid")
+
+            # Show validation details
+            if conversation.yaml_validation_result:
+                with st.expander("🔍 Validation Details"):
+                    if conversation.yaml_validation_result.get('valid'):
+                        st.success("Bundle configuration is valid!")
+                    else:
+                        st.error("Validation failed:")
+                        st.text(conversation.yaml_validation_result.get('error', 'Unknown error'))
+
         # Generated Files
         if conversation.generated_files:
-            st.subheader("📁 Generated Files")
+            st.subheader("📁 Other Generated Files")
             for file_info in conversation.generated_files:
                 st.write(f"📄 {file_info.get('name', 'Unknown')}")
                 st.caption(f"Created: {file_info.get('created', 'Unknown')}")
@@ -373,6 +413,52 @@ def check_environment():
         'client_available': CLIENT_AVAILABLE,
         'oauth_available': bool(oauth_token)
     }
+
+async def validate_yaml_bundle(yaml_content: str):
+    """Validate the YAML bundle using Databricks MCP tools"""
+    if not CLIENT_AVAILABLE:
+        st.error("Claude Code client not available")
+        return
+
+    conversation = get_current_conversation()
+
+    try:
+        oauth_token = get_oauth_token()
+        client = await create_chat_client(oauth_token=oauth_token)
+
+        # Create a temporary file to validate
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+            f.write(yaml_content)
+            temp_path = f.name
+
+        validation_query = f"Validate the Databricks bundle YAML file at {temp_path} using the validate_bundle tool"
+
+        async with client:
+            await client.query(validation_query)
+
+            async for msg in client.receive_messages():
+                if hasattr(msg, 'content'):
+                    for block in msg.content:
+                        if hasattr(block, 'text') and block.text:
+                            # Parse validation result
+                            if "valid" in block.text.lower() and "error" not in block.text.lower():
+                                conversation.yaml_validation_result = {"valid": True, "message": block.text}
+                                st.success("✅ Bundle validation passed!")
+                            else:
+                                conversation.yaml_validation_result = {"valid": False, "error": block.text}
+                                st.error("❌ Bundle validation failed")
+                            break
+                break
+
+        # Clean up temp file
+        os.unlink(temp_path)
+
+    except Exception as e:
+        conversation.yaml_validation_result = {"valid": False, "error": str(e)}
+        st.error(f"Validation error: {str(e)}")
+
+    st.rerun()
 
 async def process_enhanced_chat_message(message: str):
     """Enhanced chat message processing with better state management"""
@@ -445,9 +531,23 @@ async def process_enhanced_chat_message(message: str):
                             content_str = _extract_content_string(block.content)
 
                             if content_str:
-                                # Check for file generation
-                                if any(ext in content_str for ext in ['.zip', '.yml', '.yaml']):
-                                    # Handle file generation
+                                # Check for YAML content (databricks.yml generation)
+                                yaml_content = _extract_yaml_content(content_str)
+                                if yaml_content:
+                                    conversation = get_current_conversation()
+                                    conversation.generated_yaml = yaml_content
+
+                                    add_message('system', f"✅ Generated YAML bundle configuration", 'yaml', {
+                                        'yaml_content': yaml_content,
+                                        'lines': len(yaml_content.split('\n'))
+                                    })
+
+                                    with progress_container:
+                                        st.success(f"📄 Generated databricks.yml ({len(yaml_content.split('\n'))} lines)")
+
+                                # Check for other file generation
+                                elif any(ext in content_str for ext in ['.zip', '.yml', '.yaml']):
+                                    # Handle other file generation
                                     filename = _extract_filename(content_str)
                                     if filename:
                                         conversation = get_current_conversation()
@@ -536,6 +636,51 @@ def _extract_filename(content_str: str) -> str:
             for part in parts:
                 if part.endswith(('.zip', '.yml', '.yaml')):
                     return part.split('/')[-1]
+    return None
+
+def _extract_yaml_content(content_str: str) -> Optional[str]:
+    """Extract YAML content from tool response"""
+    if not content_str:
+        return None
+
+    # Look for YAML patterns
+    yaml_indicators = [
+        'bundle:',
+        'resources:',
+        'variables:',
+        'targets:',
+        'databricks.yml',
+        'databricks.yaml'
+    ]
+
+    # Check if content contains YAML structure
+    if any(indicator in content_str for indicator in yaml_indicators):
+        lines = content_str.split('\n')
+        yaml_lines = []
+        in_yaml_block = False
+
+        for line in lines:
+            # Start of YAML block
+            if line.strip().startswith('bundle:') or (line.strip().startswith('```yaml') or line.strip().startswith('```yml')):
+                in_yaml_block = True
+                if not line.strip().startswith('```'):
+                    yaml_lines.append(line)
+                continue
+
+            # End of YAML block
+            if line.strip() == '```' and in_yaml_block:
+                break
+
+            # Collect YAML lines
+            if in_yaml_block:
+                yaml_lines.append(line)
+
+        if yaml_lines:
+            yaml_content = '\n'.join(yaml_lines).strip()
+            # Validate it looks like proper YAML
+            if 'bundle:' in yaml_content and len(yaml_content) > 50:
+                return yaml_content
+
     return None
 
 def main():

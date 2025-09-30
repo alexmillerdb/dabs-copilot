@@ -24,28 +24,73 @@ async def upload_bundle(
     yaml_content: str = Field(description="The generated bundle YAML content"),
     bundle_name: str = Field(description="Name for the bundle (used for folder name)"),
     workspace_base: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="Base path in workspace (defaults to /Workspace/Users/{username}/bundles)"
     )
 ) -> str:
-    """Upload generated bundle YAML to Databricks workspace.
-    
+    """Upload generated bundle YAML to Databricks workspace or save locally.
+
     Creates a folder structure and uploads the bundle configuration,
     making it ready for validation and deployment.
     """
     try:
+        # Check if we're in local testing mode
+        use_local_mode = os.getenv("USE_LOCAL_BUNDLE_STORAGE", "true").lower() == "true"
+
+        if use_local_mode:
+            # LOCAL MODE: Return content for app to save
+            from pathlib import Path
+
+            # Generate README content
+            readme_content = f"""# {bundle_name}
+
+Generated Databricks Asset Bundle
+
+## Structure
+- `databricks.yml` - Main bundle configuration
+- `resources/` - Additional resource configurations
+- `src/` - Source code and notebooks
+
+## Usage
+```bash
+# Validate the bundle
+databricks bundle validate
+
+# Deploy to development
+databricks bundle deploy --target dev
+
+# Run the bundle
+databricks bundle run --target dev
+```
+
+Generated on: {datetime.now().isoformat()}
+"""
+
+            # Return the content for the Streamlit app to handle
+            # The app can save it or just display it
+            return create_success_response({
+                "message": f"Bundle generated successfully",
+                "bundle_name": bundle_name,
+                "yaml_content": yaml_content,  # Main YAML content
+                "readme_content": readme_content,  # README content
+                "suggested_path": f"generated_bundles/{bundle_name}",
+                "mode": "local",
+                "timestamp": datetime.now().isoformat()
+            })
+
+        # DATABRICKS MODE: Original workspace upload logic
         workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
-        
+
         # Get current user for default path
         current_user = workspace_client.current_user.me()
         username = current_user.user_name
-        
+
         # Set workspace path
         if not workspace_base:
             workspace_base = f"/Workspace/Users/{username}/bundles"
-        
+
         # Create bundle directory path
         bundle_path = f"{workspace_base}/{bundle_name}"
         
