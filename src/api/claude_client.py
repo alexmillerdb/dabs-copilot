@@ -5,10 +5,36 @@ from typing import List, Optional
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from dotenv import load_dotenv
 
-# Ensure environment variables are loaded
+# Load environment variables (only if .env exists - for local development)
 project_root = Path(__file__).parent.parent.parent
 dotenv_path = project_root / ".env"
-load_dotenv(dotenv_path)
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+    print("📁 Loaded .env file for local development")
+else:
+    print("☁️ Running in production mode - using environment variables")
+
+from databricks.sdk import WorkspaceClient
+import time
+
+def _databricks_headers(oauth_token: Optional[str]) -> dict:
+    # Prefer forwarded user token when provided (user authorization), else app OAuth via unified auth
+    if oauth_token:
+        return {"Authorization": f"Bearer {oauth_token}"}
+    wc = WorkspaceClient()
+    return wc.config.authenticate()  # {'Authorization': 'Bearer ...'}
+
+# def build_mcp_config():
+#     token = get_databricks_bearer()
+#     mcp_server_url = os.getenv("MCP_REMOTE_URL")
+#     return {
+#         "databricks-mcp": {
+#             "type": "http",
+#             "url": f"{mcp_server_url}/mcp",
+#             "headers": {"Authorization": f"Bearer {token}"},
+#         }
+#     }
+
 
 # Validate Claude API key is available
 def validate_api_key():
@@ -16,6 +42,7 @@ def validate_api_key():
     api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
         print("❌ CLAUDE_API_KEY not found in environment variables")
+        print(f"   Available env vars: {', '.join(sorted([k for k in os.environ.keys() if 'KEY' in k or 'SECRET' in k]))}")
         return False
 
     # Check if it looks like a valid key (starts with sk-ant-)
@@ -49,6 +76,7 @@ def get_databricks_token(token: str = None) -> str:
     workspace_client = WorkspaceClient(profile=profile)
     return workspace_client.config.token
 
+
 def build_chat_options(oauth_token: str = None) -> ClaudeCodeOptions:
     """Build Claude options for chat-based DAB generation
 
@@ -65,49 +93,71 @@ def build_chat_options(oauth_token: str = None) -> ClaudeCodeOptions:
     print(f"🐞 Project root: {project_root}")
     print(f"🐞 MCP server URL: {mcp_server_url}")
     print(f"🐞 Current working directory: {Path.cwd()}")
+
+    # Debug OAuth token
+    oauth_debug = "present" if oauth_token else "missing"
+    print(f"🐞 OAuth token: {oauth_debug}")
     
     # Pre-approve Databricks MCP tools so the agent can use them without extra prompting
-    allowed_tools: List[str] = [
-        # Core/health
-        "mcp__databricks-mcp__health",
+    allowed_tools = [f"mcp__databricks-mcp__*"]
+    # allowed_tools: List[str] = [
+    #     # Core/health
+    #     "mcp__databricks-mcp__health",
 
-        # Jobs and workspace basics (mcp/server/tools.py)
-        "mcp__databricks-mcp__list_jobs",
-        "mcp__databricks-mcp__get_job",
-        "mcp__databricks-mcp__run_job",
-        "mcp__databricks-mcp__list_notebooks",
-        "mcp__databricks-mcp__export_notebook",
-        "mcp__databricks-mcp__execute_dbsql",
-        "mcp__databricks-mcp__list_warehouses",
-        "mcp__databricks-mcp__list_dbfs_files",
-        "mcp__databricks-mcp__generate_bundle_from_job",
-        "mcp__databricks-mcp__get_cluster",
+    #     # Jobs and workspace basics (mcp/server/tools.py)
+    #     "mcp__databricks-mcp__list_jobs",
+    #     "mcp__databricks-mcp__get_job",
+    #     "mcp__databricks-mcp__run_job",
+    #     "mcp__databricks-mcp__list_notebooks",
+    #     "mcp__databricks-mcp__export_notebook",
+    #     "mcp__databricks-mcp__execute_dbsql",
+    #     "mcp__databricks-mcp__list_warehouses",
+    #     "mcp__databricks-mcp__list_dbfs_files",
+    #     "mcp__databricks-mcp__generate_bundle_from_job",
+    #     "mcp__databricks-mcp__get_cluster",
 
-        # DAB generation/validation (mcp/server/tools_dab.py)
-        "mcp__databricks-mcp__analyze_notebook",
-        "mcp__databricks-mcp__generate_bundle",
-        "mcp__databricks-mcp__validate_bundle",
-        "mcp__databricks-mcp__create_tests",
+    #     # DAB generation/validation (mcp/server/tools_dab.py)
+    #     "mcp__databricks-mcp__analyze_notebook",
+    #     "mcp__databricks-mcp__generate_bundle",
+    #     "mcp__databricks-mcp__validate_bundle",
+    #     "mcp__databricks-mcp__create_tests",
 
-        # Workspace bundle ops (mcp/server/tools_workspace.py)
-        "mcp__databricks-mcp__upload_bundle",
-        "mcp__databricks-mcp__run_bundle_command",
-        "mcp__databricks-mcp__sync_workspace_to_local",
-    ]
+    #     # Workspace bundle ops (mcp/server/tools_workspace.py)
+    #     "mcp__databricks-mcp__upload_bundle",
+    #     "mcp__databricks-mcp__run_bundle_command",
+    #     "mcp__databricks-mcp__sync_workspace_to_local",
+    # ]
     
+    # Get the authentication token
+    # auth_token = get_databricks_token(oauth_token)
+    headers = _databricks_headers(oauth_token)
+
+    # Build MCP configuration
+    # Note: FastMCP http_app creates route at /mcp path
+    mcp_config = {
+        "databricks-mcp": {
+            "type": "http",
+            # "command": "http",
+            # "command": "http_client",
+            "url": f"{mcp_server_url}/mcp",  # FastMCP streamable HTTP endpoint
+            "headers": headers,
+            # "auth": {
+            #     "type": "bearer",
+            #     "token": auth_token,
+            # },
+        }
+    }
+
+    print(f"🔌 MCP Server Config:")
+    print(f"   URL: {mcp_config['databricks-mcp']['url']}")
+    print(f"   Type: {mcp_config['databricks-mcp']['type']}")
+    print(f"   Authorization header present: {'Authorization' in headers}")
+
     return ClaudeCodeOptions(
         model="claude-sonnet-4-20250514",
         cwd=str(project_root),
-        mcp_servers={
-            "databricks-mcp": {
-                "command": "http_client",
-                "url": f"{mcp_server_url}/mcp",
-                "auth": {
-                    "type": "bearer",
-                    "token": get_databricks_token(oauth_token),
-                },
-            }
-        },
+        # mcp_servers=build_mcp_config(),
+        mcp_servers=mcp_config,
         allowed_tools=allowed_tools,
         max_turns=10,  # Reduced to prevent loops
         system_prompt=(

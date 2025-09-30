@@ -1,6 +1,7 @@
 # Databricks Apps entry point configuration
 # This file is required for Databricks Apps deployment
-command: ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Using simplified direct MCP server for streamable HTTP compatibility
+command: ["python", "server/app.py"]
 
 env:
   - name: DATABRICKS_CONFIG_PROFILE

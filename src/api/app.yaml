@@ -10,7 +10,10 @@ env:
   - name: PORT
     value: "8000"  # Databricks Apps requires port 8000
   - name: CLAUDE_API_KEY
-    value_from: dabscribe:dab_generator_claude_key  # Use existing secret from deploy script
+    valueFrom: claude_code_secret
+  - name: ANTHROPIC_API_KEY
+    valueFrom: claude_code_secret
+      # secret:dabscribe:dab_generator_claude_key  # Use existing secret from deploy script
   - name: MCP_REMOTE_URL
     value: https://databricks-mcp-server-1444828305810485.aws.databricksapps.com
   - name: DATABRICKS_CONFIG_PROFILE

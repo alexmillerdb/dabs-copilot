@@ -15,10 +15,14 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 import json
 
-# Load environment variables
+# Load environment variables (only if .env exists - for local development)
 project_root = Path(__file__).parent.parent.parent
 dotenv_path = project_root / ".env"
-load_dotenv(dotenv_path)
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+    print("📁 Loaded .env file from local development")
+else:
+    print("☁️ Running in production mode (no .env file)")
 
 from claude_code_sdk import (
     AssistantMessage,
@@ -345,7 +349,7 @@ def check_environment():
     """Check environment status"""
     claude_key = os.getenv("CLAUDE_API_KEY")
     databricks_host = os.getenv("DATABRICKS_HOST")
-    databricks_profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
+    databricks_profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps")
     oauth_token = get_oauth_token()
 
     # Validate API key
