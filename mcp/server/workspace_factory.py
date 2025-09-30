@@ -34,6 +34,10 @@ def create_workspace_client(config: Optional[Dict[str, Any]] = None) -> Optional
         4. Default profile
     """
     try:
+        logger.info(f"create_workspace_client called with config: {config}")
+        logger.info(f"Environment DATABRICKS_CONFIG_PROFILE: {os.getenv('DATABRICKS_CONFIG_PROFILE')}")
+        logger.info(f"Environment DATABRICKS_HOST: {os.getenv('DATABRICKS_HOST')}")
+
         # Use provided config first
         if config:
             if 'profile' in config:
@@ -42,7 +46,7 @@ def create_workspace_client(config: Optional[Dict[str, Any]] = None) -> Optional
             elif 'host' in config and 'token' in config:
                 logger.info(f"Creating Databricks client with host from config: {config['host']}")
                 return WorkspaceClient(host=config['host'], token=config['token'])
-        
+
         # Check for profile in environment
         profile = os.getenv("DATABRICKS_CONFIG_PROFILE")
         if profile:

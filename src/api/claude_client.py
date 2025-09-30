@@ -1,27 +1,114 @@
 import os
+import subprocess
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from dotenv import load_dotenv
 
-# Ensure environment variables are loaded
+# Load environment variables (only if .env exists - for local development)
 project_root = Path(__file__).parent.parent.parent
 dotenv_path = project_root / ".env"
-load_dotenv(dotenv_path)
+if dotenv_path.exists():
+    load_dotenv(dotenv_path)
+    print("📁 Loaded .env file for local development")
+else:
+    print("☁️ Running in production mode - using environment variables")
 
-def build_chat_options() -> ClaudeCodeOptions:
-    """Build Claude options for chat-based DAB generation"""
+from databricks.sdk import WorkspaceClient
+import time
+
+def _databricks_headers(oauth_token: Optional[str]) -> dict:
+    # Prefer forwarded user token when provided (user authorization), else app OAuth via unified auth
+    if oauth_token:
+        return {"Authorization": f"Bearer {oauth_token}"}
+    wc = WorkspaceClient()
+    return wc.config.authenticate()  # {'Authorization': 'Bearer ...'}
+
+# def build_mcp_config():
+#     token = get_databricks_bearer()
+#     mcp_server_url = os.getenv("MCP_REMOTE_URL")
+#     return {
+#         "databricks-mcp": {
+#             "type": "http",
+#             "url": f"{mcp_server_url}/mcp",
+#             "headers": {"Authorization": f"Bearer {token}"},
+#         }
+#     }
+
+
+# Validate Claude API key is available
+def validate_api_key():
+    """Validate that Claude API key is available in environment"""
+    api_key = os.getenv("CLAUDE_API_KEY")
+    if not api_key:
+        print("❌ CLAUDE_API_KEY not found in environment variables")
+        print(f"   Available env vars: {', '.join(sorted([k for k in os.environ.keys() if 'KEY' in k or 'SECRET' in k]))}")
+        return False
+
+    # Check if it looks like a valid key (starts with sk-ant-)
+    if not api_key.startswith("sk-ant-"):
+        print("⚠️ CLAUDE_API_KEY found but doesn't start with 'sk-ant-'")
+        return False
+
+    # Mask the key for security
+    masked_key = f"{api_key[:10]}...{api_key[-4:]}"
+    print(f"✅ CLAUDE_API_KEY validated: {masked_key}")
+    return True
+
+# Run validation on import
+validate_api_key()
+
+def get_databricks_token(token: str = None) -> str:
+    """Get OAuth token for MCP server authentication
+
+    Args:
+        token: Optional OAuth token from Databricks Apps. If not provided,
+               falls back to profile-based authentication.
+    """
+    if token:
+        print("🔐 Using provided OAuth token (Databricks Apps)")
+        return token
+
+    # Fall back to profile-based authentication for local development
+    from databricks.sdk import WorkspaceClient
+    profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT")
+    print(f"🔐 Using profile-based authentication: {profile}")
+    workspace_client = WorkspaceClient(profile=profile)
+    return workspace_client.config.token
+
+
+def build_chat_options(oauth_token: str = None) -> ClaudeCodeOptions:
+    """Build Claude options for chat-based DAB generation
+
+    Args:
+        oauth_token: Optional OAuth token from Databricks Apps
+    """
     project_root = Path(__file__).parent.parent.parent
     mcp_server_path = project_root / "mcp" / "server" / "main.py"
 
-    # Debug: Print paths to verify
+    # Check if we should use HTTP or STDIO mode
+    # Default to STDIO for better reliability
+    use_http_mode = os.getenv("USE_MCP_HTTP_MODE", "false").lower() == "true"
+
     print(f"🐞 Project root: {project_root}")
-    print(f"🐞 MCP server path: {mcp_server_path}")
-    print(f"🐞 MCP server exists: {mcp_server_path.exists()}")
+    print(f"🐞 MCP mode: {'HTTP' if use_http_mode else 'STDIO'}")
+    print(f"🐞 MCP server path: {mcp_server_path if not use_http_mode else 'N/A'}")
     print(f"🐞 Current working directory: {Path.cwd()}")
+
+    # Debug OAuth token
+    oauth_debug = "present" if oauth_token else "missing"
+    print(f"🐞 OAuth token: {oauth_debug}")
     
     # Pre-approve Databricks MCP tools so the agent can use them without extra prompting
+    # Using explicit tool names as wildcard pattern may not work in Claude Code SDK
     allowed_tools: List[str] = [
+        # Core Claude Code tools for file operations
+        "Write",
+        "Read",
+        "Edit",
+        "Glob",
+        "Grep",
+
         # Core/health
         "mcp__databricks-mcp__health",
 
@@ -49,25 +136,51 @@ def build_chat_options() -> ClaudeCodeOptions:
         "mcp__databricks-mcp__sync_workspace_to_local",
     ]
     
-    # Environment configuration for MCP server
-    mcp_env = {
-        "DATABRICKS_CONFIG_PROFILE": os.getenv("DATABRICKS_CONFIG_PROFILE", "DEFAULT"),
-        "DATABRICKS_HOST": os.getenv("DATABRICKS_HOST", ""),
-    }
-    
-    return ClaudeCodeOptions(
-        model="claude-sonnet-4-20250514",
-        cwd=str(project_root),  # Set to project root for MCP server
-        mcp_servers={
+    # Build MCP configuration
+    if use_http_mode:
+        # HTTP mode (when explicitly requested)
+        mcp_server_url = os.getenv("MCP_REMOTE_URL", "http://localhost:8000")
+        headers = _databricks_headers(oauth_token)
+
+        mcp_config = {
             "databricks-mcp": {
+                "type": "http",
+                "url": f"{mcp_server_url}/mcp",
+                "headers": headers,
+            }
+        }
+
+        print(f"🔌 MCP Server Config (HTTP):")
+        print(f"   URL: {mcp_config['databricks-mcp']['url']}")
+        print(f"   Type: {mcp_config['databricks-mcp']['type']}")
+        print(f"   Authorization header present: {'Authorization' in headers}")
+    else:
+        # STDIO mode (default - more reliable, direct Python execution)
+        mcp_config = {
+            "databricks-mcp": {
+                "type": "stdio",
                 "command": "python",
                 "args": [str(mcp_server_path)],
-                "env": mcp_env,
-                "cwd": str(project_root),  # Ensure MCP server runs from project root
+                "env": {
+                    "DATABRICKS_CONFIG_PROFILE": os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps"),
+                    "DATABRICKS_HOST": os.getenv("DATABRICKS_HOST", ""),
+                    "PYTHONPATH": str(project_root / "mcp" / "server"),
+                }
             }
-        },
+        }
+
+        print(f"🔌 MCP Server Config (STDIO):")
+        print(f"   Command: python {mcp_server_path}")
+        print(f"   Profile: {os.getenv('DATABRICKS_CONFIG_PROFILE', 'aws-apps')}")
+        print(f"   Type: stdio")
+
+    return ClaudeCodeOptions(
+        model="claude-sonnet-4-20250514",
+        cwd=str(project_root),
+        # mcp_servers=build_mcp_config(),
+        mcp_servers=mcp_config,
         allowed_tools=allowed_tools,
-        max_turns=10,  # Reduced to prevent loops
+        max_turns=50,  # Increased for complex DAB generation workflows
         system_prompt=(
             "You are a Databricks Asset Bundle (DAB) generation expert. "
             "ALWAYS use MCP Databricks tools (mcp__databricks-mcp__*) for Databricks operations - "
@@ -77,7 +190,77 @@ def build_chat_options() -> ClaudeCodeOptions:
         ),
     )
 
-async def create_chat_client() -> ClaudeSDKClient:
-    """Create a new Claude SDK client for chat conversations"""
-    options = build_chat_options()
+def get_claude_cli_path() -> Optional[str]:
+    """Get the path to Claude CLI binary
+
+    Returns path in this order of precedence:
+    1. From claude_cli_path.txt file (Databricks Apps)
+    2. From CLAUDE_CLI_PATH environment variable
+    3. Try to find it in common locations
+    4. None if not found
+    """
+    current_dir = Path(__file__).parent
+
+    # Check for path file (created by setup script in Apps)
+    cli_path_file = current_dir / "claude_cli_path.txt"
+    if cli_path_file.exists():
+        cli_path = cli_path_file.read_text().strip()
+        if Path(cli_path).exists():
+            print(f"🔧 Using Claude CLI from path file: {cli_path}")
+            return cli_path
+
+    # Check environment variable
+    env_path = os.getenv("CLAUDE_CLI_PATH")
+    if env_path and Path(env_path).exists():
+        print(f"🔧 Using Claude CLI from env: {env_path}")
+        return env_path
+
+    # Check local node_modules
+    local_paths = [
+        current_dir / "claude_cli" / "node_modules" / ".bin" / "claude",
+        current_dir / "node_modules" / ".bin" / "claude",
+        Path.home() / "node_modules" / ".bin" / "claude",
+    ]
+
+    for path in local_paths:
+        if path.exists():
+            print(f"🔧 Found Claude CLI at: {path}")
+            return str(path)
+
+    # Try to find it in PATH
+    try:
+        result = subprocess.run(["which", "claude"], capture_output=True, text=True)
+        if result.returncode == 0:
+            cli_path = result.stdout.strip()
+            print(f"🔧 Found Claude CLI in PATH: {cli_path}")
+            return cli_path
+    except:
+        pass
+
+    print("⚠️ Claude CLI not found, will try default behavior")
+    return None
+
+async def create_chat_client(oauth_token: str = None) -> ClaudeSDKClient:
+    """Create a new Claude SDK client for chat conversations
+
+    Args:
+        oauth_token: Optional OAuth token from Databricks Apps
+    """
+    options = build_chat_options(oauth_token)
+
+    # Try to get explicit CLI path and set it in environment
+    cli_path = get_claude_cli_path()
+
+    if cli_path:
+        # Set the PATH environment variable to include the CLI directory
+        cli_dir = os.path.dirname(cli_path)
+        current_path = os.environ.get('PATH', '')
+        if cli_dir not in current_path:
+            os.environ['PATH'] = f"{cli_dir}:{current_path}"
+        print(f"🚀 Added CLI directory to PATH: {cli_dir}")
+
+        # Also set explicit path for the SDK to use
+        os.environ['CLAUDE_CLI_PATH'] = cli_path
+        print(f"🚀 Set CLAUDE_CLI_PATH environment variable: {cli_path}")
+
     return ClaudeSDKClient(options=options)

@@ -1,0 +1,12 @@
+{
+  "name": "dabscribe-app",
+  "version": "1.0.0",
+  "description": "DABscribe - Writing your bundles, so you don't have to",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/claude-code": "latest"
+  },
+  "scripts": {
+    "setup": "npm install && echo 'Claude CLI installed'"
+  }
+}

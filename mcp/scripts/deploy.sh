@@ -108,7 +108,7 @@ load_env_file
 
 # Configuration with environment variable support
 APP_NAME=${DATABRICKS_APP_NAME:-"databricks-mcp-server"}
-PROFILE=${DATABRICKS_CONFIG_PROFILE:-"DEFAULT"}
+PROFILE=${DATABRICKS_CONFIG_PROFILE:-"aws-apps"}
 DATABRICKS_HOST=${DATABRICKS_HOST:-""}
 
 # Debug: Show final configuration values
