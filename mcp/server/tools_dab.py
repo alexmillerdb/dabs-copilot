@@ -33,18 +33,39 @@ analysis_service = NotebookAnalysisService()
 validation_service = BundleValidationService()
 
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Analyze Notebook",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def analyze_notebook(
     notebook_path: str = types.Field(description="Path to notebook or file in Databricks workspace or local filesystem")
 ) -> str:
     """
     Analyze a notebook/Python/SQL file to extract basic info needed for DAB generation.
-    
+
+    Args:
+        notebook_path (str): Path to notebook in Databricks workspace or local filesystem
+
     Returns:
-    - File type (python/sql/notebook)
-    - Python libraries used (for cluster dependencies)
-    - Basic workflow type (etl/ml/reporting)
-    - Parameters/widgets found
+        str: JSON with schema:
+        {
+            "success": bool,
+            "data": {
+                "file_path": str,
+                "file_type": "python" | "sql" | "notebook",
+                "libraries": list[str],
+                "workflow_type": "etl" | "ml" | "reporting",
+                "widgets": list[str],
+                "uses_spark": bool,
+                "uses_mlflow": bool
+            }
+        }
+
+    Example:
+        >>> analyze_notebook("/Workspace/Users/user@example.com/etl/main.py")
     """
     try:
         logger.info(f"Analyzing file: {notebook_path}")
@@ -259,7 +280,13 @@ def _generate_validation_recommendations(validation_result: dict) -> dict:
     return recommendations
 
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Generate Bundle",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False
+})
 async def generate_bundle(
     bundle_name: str = types.Field(description="Name for the Databricks Asset Bundle"),
     file_paths: list[str] = types.Field(description="List of notebook/Python/SQL file paths to include"),
@@ -267,9 +294,31 @@ async def generate_bundle(
 ) -> str:
     """
     Prepare context for Claude Code to generate a Databricks Asset Bundle.
-    
-    This tool analyzes the provided files and loads DAB patterns from /mcp/context/ 
+
+    This tool analyzes the provided files and loads DAB patterns from /mcp/context/
     to give Claude Code everything needed to intelligently generate a databricks.yml.
+
+    Args:
+        bundle_name (str): Name for the bundle (used in configuration)
+        file_paths (list[str]): List of notebook/Python/SQL file paths to include
+        output_path (str, optional): Where to save bundle files
+
+    Returns:
+        str: JSON with schema:
+        {
+            "success": bool,
+            "data": {
+                "bundle_name": str,
+                "output_path": str,
+                "file_analyses": list[dict],
+                "context_files": dict,
+                "workspace_host": str,
+                "instructions": str
+            }
+        }
+
+    Example:
+        >>> generate_bundle("my-etl", ["/Workspace/Users/user/etl.py"])
     """
     try:
         logger.info(f"Preparing bundle generation context for '{bundle_name}' with {len(file_paths)} files")
@@ -349,15 +398,43 @@ The generated bundle should be production-ready and follow all best practices fr
         return create_error_response(f"Bundle context preparation failed: {str(e)}")
 
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Validate Bundle",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def validate_bundle(
     bundle_path: str = types.Field(description="Path to bundle root directory or databricks.yml file"),
     target: str = types.Field(default="dev", description="Target environment to validate")
 ) -> str:
     """
     Validate a Databricks Asset Bundle using the native Databricks CLI.
-    
-    Simply runs 'databricks bundle validate' to check if the bundle configuration is valid.
+
+    Runs 'databricks bundle validate' to check if the bundle configuration is valid.
+
+    Args:
+        bundle_path (str): Path to bundle root directory or databricks.yml file
+        target (str): Target environment to validate (default: "dev")
+
+    Returns:
+        str: JSON with schema:
+        {
+            "success": bool,
+            "data": {
+                "validation_passed": bool,
+                "bundle_path": str,
+                "target_environment": str,
+                "command": str,
+                "stdout": str,
+                "stderr": str | null,
+                "return_code": int
+            }
+        }
+
+    Example:
+        >>> validate_bundle("./my-bundle", target="dev")
     """
     try:
         import subprocess
@@ -374,9 +451,10 @@ async def validate_bundle(
         # Run databricks bundle validate
         cmd = ["databricks", "bundle", "validate", "-t", target]
         
-        # Get the configured profile from environment or use default
-        profile = os.getenv("DATABRICKS_CONFIG_PROFILE", "aws-apps")
-        cmd.extend(["--profile", profile])
+        # Get the configured profile from environment (no hardcoded default per MCP best practices)
+        profile = os.getenv("DATABRICKS_CONFIG_PROFILE")
+        if profile:
+            cmd.extend(["--profile", profile])
         
         logger.info(f"Running command: {' '.join(cmd)} in {working_dir}")
         
@@ -417,30 +495,8 @@ async def validate_bundle(
         return create_error_response(f"Bundle validation failed: {str(e)}")
 
 
-@mcp.tool()
-async def create_tests(
-    resource_type: str = types.Field(description="Type of resource to test (notebook/job/pipeline)"),
-    resource_path: str = types.Field(description="Path to the resource"),
-    test_framework: str = types.Field(default="pytest", description="Testing framework (pytest/unittest)"),
-    include_mocks: bool = types.Field(default=True, description="Generate mock configurations"),
-    include_fixtures: bool = types.Field(default=False, description="Create test data fixtures")
-) -> str:
-    """
-    Generate unit and integration test scaffolds for Databricks resources.
-    
-    Creates test files including:
-    - Unit test templates
-    - Mock Spark session and dbutils
-    - Test fixtures and sample data
-    - Integration test scenarios
-    """
-    try:
-        # Placeholder for create_tests implementation
-        return create_error_response("create_tests tool is not yet implemented. Coming in next iteration.")
-        
-    except Exception as e:
-        logger.error(f"Error in create_tests: {e}")
-        return create_error_response(f"Test creation failed: {str(e)}")
+# Note: create_tests tool removed as it was not implemented
+# Will be added back when fully functional per MCP Builder best practices
 
 
 if __name__ == "__main__":

@@ -1,45 +1,39 @@
 #!/usr/bin/env python3
 """
-Databricks MCP Server - Main entry point for Claude Code CLI
-Combines Phase 1 (core tools) and Phase 2 (DAB generation) tools
-"""
+Databricks MCP Server - Entry point for Claude Code CLI (stdio mode)
 
-import asyncio
+Per MCP Builder best practices:
+- All logging goes to stderr (not stdout)
+- No print() statements (stdout reserved for MCP protocol)
+- Clean initialization without internal API access
+"""
+import sys
 import logging
-from tools import mcp
 from dotenv import load_dotenv
 
-# Import DAB tools to register them with the MCP server
-# This adds analyze_notebook, generate_bundle, validate_bundle, create_tests
-import tools_dab
-
-# Import workspace tools to register them with the MCP server
-# This adds upload_bundle, run_bundle_command, sync_workspace_to_local
-import tools_workspace
-
-# Configure logging
+# Configure logging to stderr (REQUIRED for MCP stdio servers)
 logging.basicConfig(
+    stream=sys.stderr,
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("databricks_mcp")
 
 # Load environment variables
 load_dotenv()
 
-async def main():
-    """Run MCP server with all available tools"""
-    tool_count = len(mcp._tool_manager._tools)
-    logger.info(f"Starting Databricks MCP server with {tool_count} tools")
-    
-    # List available tools for debugging
-    tool_names = [tool.name for tool in mcp._tool_manager._tools.values()]
-    logger.info(f"Available tools: {', '.join(tool_names)}")
-    
-    print(f"Databricks MCP Server started with {tool_count} tools")
-    print("Ready for Claude Code CLI connections...")
-    
-    await mcp.run_stdio_async()
+# Import MCP server and tool modules to register all tools
+from tools import mcp
+import tools_dab
+import tools_workspace
+
+def main():
+    """Run MCP server in stdio mode for Claude Code CLI integration."""
+    logger.info("Starting Databricks MCP server (stdio mode)")
+    logger.info("Tools registered from: tools.py, tools_dab.py, tools_workspace.py")
+
+    # Run the MCP server (blocks until connection closes)
+    mcp.run()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
