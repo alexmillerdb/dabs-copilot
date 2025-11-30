@@ -5,7 +5,11 @@
       "Bash(python:*)",
       "Bash(timeout:*)",
       "WebFetch(domain:docs.claude.com)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:platform.claude.com)",
+      "WebFetch(domain:mlflow.org)"
     ],
     "deny": [],
     "ask": []
