@@ -738,34 +738,3 @@ class DABsAgent:
     def session_id(self) -> str | None:
         """Current session ID for resumption."""
         return self._session_id
-
-
-# Convenience function for one-shot usage
-async def generate_bundle(
-    prompt: str,
-    tool_mode: str = "auto",
-    tool_category: str | None = None,
-    mcp_config: dict | None = None,
-) -> AsyncIterator[Any]:
-    """
-    One-shot bundle generation (no multi-turn).
-
-    For interactive use, prefer DABsAgent class.
-
-    Args:
-        prompt: User's request (e.g., "Generate a bundle from job 123")
-        tool_mode: "auto" | "mcp" | "custom" - tool mode selection
-        tool_category: Filter tools by category in custom mode ("core", "dab", "workspace")
-        mcp_config: Optional custom MCP configuration (mcp mode only)
-
-    Yields:
-        SDK messages (tool calls, responses, results)
-    """
-    # Use DABsAgent internally for proper SDK client lifecycle management
-    async with DABsAgent(
-        tool_mode=tool_mode,
-        tool_category=tool_category,
-        mcp_config=mcp_config,
-    ) as agent:
-        async for msg in agent.chat(prompt):
-            yield msg
