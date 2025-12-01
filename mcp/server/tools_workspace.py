@@ -19,7 +19,13 @@ from workspace_factory import get_or_create_client
 
 logger = logging.getLogger(__name__)
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Upload Bundle",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def upload_bundle(
     yaml_content: str = Field(description="The generated bundle YAML content"),
     bundle_name: str = Field(description="Name for the bundle (used for folder name)"),
@@ -32,6 +38,17 @@ async def upload_bundle(
 
     Creates a folder structure and uploads the bundle configuration,
     making it ready for validation and deployment.
+
+    Args:
+        yaml_content (str): The generated bundle YAML content
+        bundle_name (str): Name for the bundle (used for folder name)
+        workspace_base (str, optional): Base path in workspace
+
+    Returns:
+        str: JSON with upload status, paths, and next steps
+
+    Example:
+        >>> upload_bundle(yaml_content="bundle:\\n  name: my-etl", bundle_name="my-etl")
     """
     try:
         # Check if we're in local testing mode
@@ -177,7 +194,13 @@ Generated on: {datetime.now().isoformat()}
         return create_error_response(f"Failed to upload bundle: {str(e)}")
 
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Run Bundle Command",
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def run_bundle_command(
     workspace_path: str = Field(description="Path to bundle in workspace"),
     command: str = Field(
@@ -194,9 +217,20 @@ async def run_bundle_command(
     )
 ) -> str:
     """Run Databricks bundle CLI commands on an uploaded bundle.
-    
-    Executes bundle commands like validate, deploy, or run on bundles
-    that have been uploaded to the workspace.
+
+    WARNING: Deploy/run/destroy commands can modify resources and incur costs.
+
+    Args:
+        workspace_path (str): Path to bundle in workspace
+        command (str): Bundle command - validate, deploy, run, destroy
+        target (str): Target environment - dev, staging, prod
+        profile (str, optional): Databricks CLI profile to use
+
+    Returns:
+        str: JSON with command output and next steps
+
+    Example:
+        >>> run_bundle_command(workspace_path="/Workspace/Users/user/bundles/my-etl", command="validate")
     """
     try:
         # Validate command
@@ -302,7 +336,13 @@ async def run_bundle_command(
         return create_error_response(f"Failed to run bundle command: {str(e)}")
 
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Sync Workspace to Local",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def sync_workspace_to_local(
     workspace_path: str = Field(description="Source path in Databricks workspace"),
     local_path: str = Field(description="Destination path on local filesystem"),
@@ -312,8 +352,19 @@ async def sync_workspace_to_local(
     )
 ) -> str:
     """Sync files from Databricks workspace to local filesystem.
-    
+
     Downloads bundle files from workspace to enable local validation and deployment.
+
+    Args:
+        workspace_path (str): Source path in Databricks workspace
+        local_path (str): Destination path on local filesystem
+        profile (str, optional): Databricks CLI profile to use
+
+    Returns:
+        str: JSON with synced files list and next steps
+
+    Example:
+        >>> sync_workspace_to_local("/Workspace/Users/user/bundles/my-etl", "./local-bundle")
     """
     try:
         # Get profile from environment if not specified

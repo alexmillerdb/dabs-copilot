@@ -2,8 +2,23 @@
 databricks-connect==17.1.2
 databricks-sdk==0.65.0
 
-# Claude SDK
-claude-code-sdk==0.0.23
+# Claude Agent SDK
+claude-agent-sdk>=0.1.0
+anthropic>=0.18.0
+
+# CLI Framework
+typer[all]>=0.9.0
+rich>=13.0.0
+
+# LiteLLM for proxy support (Databricks FMAPI)
+litellm>=1.40.0
+
+# MLflow for observability
+mlflow>=3.5.0
+
+# Async HTTP client
+aiohttp>=3.9.0
+
 # Note: Databricks CLI v2 is a standalone binary, install separately:
 # curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
 

@@ -1,324 +1,263 @@
-# Databricks Asset Bundles Co-pilot
+# DABs Copilot
 
-> **AI-powered Databricks Asset Bundle (DAB) generation made simple**
+AI-powered CLI for generating, validating, and deploying Databricks Asset Bundles.
 
-Transform your existing Databricks jobs and workspace code into properly configured, production-ready Asset Bundles using Claude AI and a comprehensive MCP (Model Context Protocol) server.
+## Installation
 
-## 🎯 What This Tool Does
+```bash
+pip install -e .
+```
 
-The DABs Co-pilot automatically generates Databricks Asset Bundles from:
-- **Existing Databricks Jobs** → Extract job configuration, analyze notebooks, create optimized bundles
-- **Workspace Code** → Scan directories, detect patterns, generate multi-resource bundles
+Requires:
+- Python 3.10+
+- [Databricks CLI](https://docs.databricks.com/dev-tools/cli/index.html) (`databricks auth login`)
+- `ANTHROPIC_API_KEY` environment variable (or LiteLLM proxy)
 
-**Key Benefits:**
-- ⚡ **Fast Generation** - Convert jobs to DABs in under 2 minutes
-- 🎯 **Production Ready** - Generates validated, deployable configurations
-- 🔧 **Smart Analysis** - Detects dependencies, cluster requirements, and best practices
-- 🖥️ **Easy Interface** - Simple web UI with real-time progress tracking
-- ✅ **Built-in Validation** - Automatically validates generated bundles
+## Quick Start
 
-## 🏗️ Architecture
+```bash
+# Check authentication
+dabs-copilot --check-auth
+
+# Generate bundle from a job
+dabs-copilot generate 12345 --name my-etl
+
+# Generate from workspace notebooks
+dabs-copilot generate "/Workspace/Users/me/notebooks" -n my-pipeline
+
+# Validate bundle
+dabs-copilot validate ./my-etl/
+
+# Deploy to dev
+dabs-copilot deploy ./my-etl/ -t dev
+
+# Interactive chat mode
+dabs-copilot chat
+```
+
+## Architecture
 
 ```
-┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
-│   Streamlit Web UI  │    │  Claude Code SDK    │    │   MCP Server        │
-│   (Frontend)        │◄──►│  (AI Engine)       │◄──►│   (Databricks API)  │
-└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
-         │                           │                           │
-         ▼                           ▼                           ▼
-┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
-│   User Interaction  │    │   DAB Generation    │    │   18 Databricks     │
-│   - Job/Path Input  │    │   - Analysis        │    │   Operations        │
-│   - Progress View   │    │   - YAML Creation   │    │   - Jobs/Notebooks  │
-│   - YAML Download   │    │   - Validation      │    │   - Workspace/DBFS  │
-└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      dabs-copilot CLI                        │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐      │
+│  │  generate   │    │  validate   │    │   deploy    │      │
+│  │  (one-shot) │    │  (bundle)   │    │  (bundle)   │      │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘      │
+│         │                  │                  │              │
+│         └────────┬─────────┴─────────┬────────┘              │
+│                  ▼                   ▼                       │
+│         ┌─────────────────┐  ┌─────────────────┐            │
+│         │   DABsAgent     │  │  Databricks CLI │            │
+│         │  (Claude SDK)   │  │                 │            │
+│         └────────┬────────┘  └─────────────────┘            │
+│                  │                                           │
+│    ┌─────────────┼─────────────┐                            │
+│    ▼             ▼             ▼                            │
+│ ┌──────┐   ┌──────────┐   ┌──────────┐                      │
+│ │Disco-│   │ Analyzer │   │Generator │  ... 6 subagents    │
+│ │ very │   │          │   │          │                      │
+│ └──────┘   └──────────┘   └──────────┘                      │
+│                  │                                           │
+│                  ▼                                           │
+│         ┌─────────────────┐                                 │
+│         │  17 Databricks  │                                 │
+│         │     Tools       │                                 │
+│         │  (SDK + MCP)    │                                 │
+│         └─────────────────┘                                 │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Components
 
-- **Frontend**: Streamlit web application with real-time chat interface
-- **AI Engine**: Claude Code SDK with 50-turn conversations for complex workflows
-- **MCP Server**: 18 specialized tools for Databricks operations (STDIO/HTTP modes)
-- **Integration**: Databricks SDK for secure workspace access
+- **CLI** (`dabs-copilot`): Typer-based commands for generate, validate, deploy, chat
+- **DABsAgent**: Claude Agent SDK orchestrator with 6 specialized subagents
+- **Tools**: 17 Databricks operations (jobs, notebooks, clusters, bundles)
+- **Subagents**: Discovery → Analysis → Generation → Validation → Deployment
 
-## 📁 Project Structure
+## Commands
 
-```
-dabs-copilot/
-├── src/api/                    # Streamlit Application
-│   ├── app.py                  # Main web interface
-│   ├── claude_client.py        # Claude Code SDK configuration
-│   └── .env                    # Environment variables
-├── mcp/                        # MCP Server
-│   ├── server/
-│   │   ├── main.py             # STDIO entry point
-│   │   ├── app.py              # HTTP server (FastAPI)
-│   │   ├── tools.py            # Core Databricks operations (9 tools)
-│   │   ├── tools_dab.py        # DAB generation tools (6 tools)
-│   │   └── tools_workspace.py  # Workspace operations (3 tools)
-│   └── scripts/
-│       └── deploy.sh           # Databricks Apps deployment
-├── README.md                   # This file
-└── .env                        # Global environment config
-```
+### `dabs-copilot generate SOURCE`
 
-## 🔧 Prerequisites
-
-Before getting started, ensure you have:
-
-1. **Python 3.11+** installed
-2. **Databricks CLI** configured with a valid profile
-3. **Claude API Key** from Anthropic
-4. **Claude Code CLI** installed (`npm install -g @anthropic-ai/claude-code`)
-5. **Git** for cloning the repository
-
-### Verify Prerequisites
+Generate a bundle from a job ID or workspace path.
 
 ```bash
-# Check Python version
-python --version
-
-# Verify Databricks CLI
-databricks auth show
-
-# Test Claude CLI
-claude --help
-
-# Check Node.js (for Claude CLI)
-node --version
+dabs-copilot generate 12345 --name my-bundle --output ./bundles/
+dabs-copilot generate "/Workspace/Users/me/etl" -n data-pipeline -t dev
 ```
 
-## 🚀 Quick Start Guide
+| Option | Description |
+|--------|-------------|
+| `-o, --output` | Output directory (default: current) |
+| `-n, --name` | Bundle name (auto-generated if omitted) |
+| `-t, --target` | Target environment (default: dev) |
+| `-y, --yes` | Skip confirmation prompts |
 
-### Step 1: Clone and Setup
+### `dabs-copilot validate [BUNDLE_PATH]`
+
+Validate bundle configuration using Databricks CLI.
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/dabs-copilot.git
-cd dabs-copilot
-
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Install additional dependencies
-pip install streamlit databricks-sdk claude-code-sdk python-dotenv
+dabs-copilot validate ./my-bundle/
+dabs-copilot validate -t prod --json
 ```
 
-### Step 2: Configure Environment
+### `dabs-copilot deploy [BUNDLE_PATH]`
 
-Create and configure your `.env` file:
+Deploy bundle to Databricks workspace.
 
 ```bash
-# Copy the example environment file
-cp .env.example .env
-
-# Edit the configuration
-nano .env
+dabs-copilot deploy ./my-bundle/ -t dev
+dabs-copilot deploy -t prod --run  # Deploy and run job
 ```
 
-**Required Environment Variables:**
+### `dabs-copilot chat`
+
+Interactive REPL for conversational bundle generation.
 
 ```bash
-# Databricks Configuration
-DATABRICKS_CONFIG_PROFILE=your-profile-name
-DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-
-# Claude AI
-CLAUDE_API_KEY=sk-ant-api03-your-key-here
-
-# Optional: MCP Server Mode
-USE_MCP_HTTP_MODE=false  # Use STDIO mode (recommended)
+dabs-copilot chat
+dabs-copilot chat "Help me create a bundle for job 12345"
 ```
 
-### Step 3: Start the Application
+**Chat commands:**
+- `/quit` - Exit session
+- `/reset` - Start new conversation
+- `/tools` - List available tools
+- `/save PATH` - Save generated YAML
+
+## Authentication
+
+### Databricks
+
+Configure via any of:
+```bash
+# CLI profile (recommended)
+export DATABRICKS_CONFIG_PROFILE=my-profile
+
+# Direct credentials
+export DATABRICKS_HOST=https://my-workspace.cloud.databricks.com
+export DATABRICKS_TOKEN=dapi...
+
+# Or use: databricks auth login
+```
+
+### LLM Backend
 
 ```bash
-# Navigate to the API directory
-cd src/api
+# Option 1: Anthropic direct
+export ANTHROPIC_API_KEY=sk-ant-...
 
-# Start the Streamlit application
-streamlit run app.py --server.port 8501
+# Option 2: LiteLLM proxy (for Databricks FMAPI)
+export LITELLM_API_BASE=http://localhost:4000
 ```
 
-### Step 4: Access the Web Interface
+#### Using Databricks Foundation Model API via LiteLLM
 
-Open your browser and navigate to:
-```
-http://localhost:8501
-```
+To use Claude models hosted on Databricks instead of Anthropic directly:
 
-## 💻 Usage Instructions
-
-### Generate DAB from Existing Job
-
-1. **Open the Web Interface** at `http://localhost:8501`
-2. **Enter a Databricks Job ID** (e.g., `662067900958232`)
-3. **Click "Generate DAB"** or press Enter
-4. **Monitor Progress** in real-time as the system:
-   - Fetches job configuration
-   - Analyzes referenced notebooks
-   - Extracts dependencies and parameters
-   - Generates optimized bundle YAML
-   - Validates the configuration
-5. **Download Results** - Use the sidebar to download `databricks.yml`
-
-### Generate DAB from Workspace Code
-
-1. **Enter a Workspace Path** (e.g., `/Workspace/Users/your-name/project/`)
-2. **Specify Bundle Name** when prompted
-3. **Review Analysis** as the system scans files and detects patterns
-4. **Download Bundle** with complete configuration and documentation
-
-### Example Workflow
-
-```
-User Input: "Generate a DAB from job 662067900958232"
-
-System Process:
-🚀 Starting job analysis...
-⚡ Fetching job configuration from Databricks
-⚡ Analyzing notebook dependencies (3 found)
-⚡ Extracting cluster requirements and libraries
-⚡ Generating optimized bundle configuration
-⚡ Validating bundle structure
-✅ Bundle validation passed - ready for deployment
-
-Output: databricks.yml + README.md ready for download
-```
-
-## 🔧 Configuration Options
-
-### MCP Server Modes
-
-The system supports two operation modes:
-
-#### STDIO Mode (Default - Recommended)
+1. Configure environment variables in `.env`:
 ```bash
-USE_MCP_HTTP_MODE=false
+DATABRICKS_API_BASE=https://your-workspace.cloud.databricks.com/serving-endpoints
+DATABRICKS_API_KEY=dapi...
+LITELLM_API_BASE=http://localhost:4000
 ```
-- **Advantages**: More reliable, direct Python execution, better error handling
-- **Use Case**: Local development and testing
 
-#### HTTP Mode
+2. Configure `litellm_config.yaml` to route model requests to Databricks:
+```yaml
+model_list:
+  - model_name: claude-sonnet-4-20250514
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
+```
+
+3. Start the LiteLLM proxy:
 ```bash
-USE_MCP_HTTP_MODE=true
-MCP_REMOTE_URL=https://your-mcp-server.databricksapps.com
+litellm --config litellm_config.yaml
 ```
-- **Advantages**: Remote deployment, shared server access
-- **Use Case**: Production deployments with Databricks Apps
 
-### Databricks Authentication
+4. Run dabs-copilot commands as usual - requests route through LiteLLM to Databricks.
 
-The system supports multiple authentication methods:
+## Project Structure
 
-1. **CLI Profile** (Recommended for local development)
-   ```bash
-   DATABRICKS_CONFIG_PROFILE=your-profile
-   ```
-
-2. **Environment Variables**
-   ```bash
-   DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
-   DATABRICKS_TOKEN=your-token
-   ```
-
-3. **OAuth** (For Databricks Apps deployment)
-   - Automatically handled when deployed to Databricks Apps
-
-## 🐛 Troubleshooting
-
-### Common Issues and Solutions
-
-#### Permission Errors
 ```
-Error: Claude requested permissions to use mcp__databricks-mcp__get_job
+src/dabs_copilot/
+├── cli/                    # CLI module
+│   ├── main.py             # Entry point
+│   ├── auth.py             # Authentication
+│   ├── output.py           # Rich console output
+│   └── commands/           # generate, validate, deploy, chat
+├── agent.py                # DABsAgent (Claude SDK)
+└── tools/sdk_tools.py      # 17 Databricks tools
 ```
-**Solution**: The allowed_tools list has been updated to include all necessary permissions. Restart the application.
 
-#### MCP Server Connection Issues
-```
-Error: Failed to connect to MCP server
-```
-**Solutions**:
-1. Verify Databricks CLI authentication: `databricks auth show`
-2. Check environment variables in `.env` file
-3. Try switching to STDIO mode: `USE_MCP_HTTP_MODE=false`
+## Development
 
-#### Claude API Key Issues
-```
-Error: CLAUDE_API_KEY not found
-```
-**Solution**: Ensure your Claude API key is properly set in the `.env` file and starts with `sk-ant-`
-
-#### Bundle Validation Failures
-**Solution**: The system automatically detects and fixes common validation issues. Check the validation output in the sidebar for specific error details.
-
-### Getting Help
-
-1. **Check the Logs**: Streamlit logs appear in your terminal
-2. **Validate Configuration**: Use `databricks auth show` to verify Databricks access
-3. **Test MCP Server**: The system includes built-in health checks
-4. **Review Environment**: Ensure all variables in `.env` are correctly set
-
-## 🎯 Advanced Features
-
-### Custom Bundle Templates
-The system automatically detects workload patterns:
-- **ETL Jobs** → Optimized for data processing workflows
-- **ML Training** → MLflow integration and experiment tracking
-- **Streaming** → Delta Live Tables and structured streaming
-- **Notebooks** → Interactive development workflows
-
-### Production Deployment
-Deploy the MCP server to Databricks Apps for team access:
 ```bash
-cd mcp
-./scripts/deploy.sh
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Format code
+black src/ && ruff check src/ --fix
 ```
 
-### API Integration
-The MCP server exposes 18 specialized tools that can be used programmatically:
-- Core operations (9 tools): Jobs, notebooks, SQL, DBFS
-- DAB generation (6 tools): Analysis, generation, validation, testing
-- Workspace operations (3 tools): Upload, sync, deployment
+## Examples
 
-## 📊 System Requirements
+### Generate from Job
 
-- **Memory**: 4GB RAM minimum, 8GB recommended
-- **Storage**: 2GB free space for dependencies and generated bundles
-- **Network**: Internet access for Claude API and Databricks workspace
-- **Permissions**: Databricks workspace access with job/notebook read permissions
+```bash
+$ dabs-copilot generate 662067900958232 --name sales-etl
 
-## 🚀 Next Steps: Deploy to Databricks Apps
+Source type: job
+Bundle name: sales-etl
+Output: ./sales-etl
 
-Take your DABs Co-pilot to production by deploying it as a Databricks App for team-wide access.
+Generating bundle...
 
-### Why Deploy to Databricks Apps?
+✓ Written: ./sales-etl/databricks.yml
 
-- **🌐 Team Access** - Share the tool with your entire organization
-- **🔐 Built-in Security** - OAuth authentication and workspace permissions
-- **☁️ No Infrastructure** - Databricks handles scaling and availability
-- **📊 Usage Analytics** - Track adoption and usage patterns
-- **🔄 Easy Updates** - Deploy new versions with zero downtime
+Bundle generated successfully!
 
-### Success Metrics
+Next steps:
+  1. Review: ./sales-etl/databricks.yml
+  2. Validate: dabs-copilot validate ./sales-etl
+  3. Deploy: dabs-copilot deploy ./sales-etl -t dev
+```
 
-Once deployed, monitor these KPIs:
-- **Adoption Rate**: Number of unique users per week
-- **Generation Success**: Percentage of successful DAB creations
-- **Time Savings**: Average time reduced from manual to automated
-- **Error Rate**: Failed generations requiring manual intervention
+### Interactive Chat
 
-## 🤝 Contributing
+```bash
+$ dabs-copilot chat
 
-This project follows Databricks best practices for Asset Bundle generation. Contributions are welcome for:
-- Additional workload pattern detection
-- Enhanced bundle templates
-- Improved error handling and validation
-- Extended MCP tool capabilities
+╭─ Welcome ─────────────────────────────────────────────╮
+│ DABs Copilot - Conversational AI for DABs             │
+│                                                       │
+│ Commands:                                             │
+│   /quit, /exit  - Exit the session                    │
+│   /reset        - Start new conversation              │
+│   /tools        - List available tools                │
+│   /save PATH    - Save last generated YAML            │
+╰───────────────────────────────────────────────────────╯
 
----
+You: Generate a bundle for my ML training job 12345
 
-**Ready to get started?** Follow the [Quick Start Guide](#🚀-quick-start-guide) above and transform your Databricks workflows into production-ready Asset Bundles in minutes!
+Agent: I'll analyze job 12345 and generate a bundle...
+  → get_job
+  → analyze_notebook
+  → generate_bundle
 
-**Ready for production?** Deploy to [Databricks Apps](#🚀-next-steps-deploy-to-databricks-apps) and enable your entire team to generate DABs with AI assistance!
+Here's your bundle configuration:
+...
+```
+
+## License
+
+Apache-2.0

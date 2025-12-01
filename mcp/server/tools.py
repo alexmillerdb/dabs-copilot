@@ -53,9 +53,32 @@ def create_error_response(error: str) -> str:
         "timestamp": datetime.now().isoformat()
     }, indent=2)
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Health Check",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def health() -> str:
-    """Check server and Databricks connection health"""
+    """Check server and Databricks connection health.
+
+    Returns:
+        str: JSON with schema:
+        {
+            "success": bool,
+            "data": {
+                "server_status": "healthy",
+                "databricks_connection": "connected",
+                "workspace_url": str,
+                "user": str,
+                "timestamp": str
+            }
+        }
+
+    Example:
+        >>> health()
+    """
     try:
         logger.info("Health check called - attempting to get workspace client")
         workspace_client = get_or_create_client()
@@ -81,28 +104,57 @@ async def health() -> str:
         logger.error(f"Health check failed: {e}")
         return create_error_response(f"Health check failed: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "List Jobs",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def list_jobs(
     limit: int = Field(default=100, description="Maximum number of jobs to return"),
     name_filter: Optional[str] = Field(default=None, description="Filter jobs by name containing this string")
 ) -> str:
-    """List all jobs in the Databricks workspace"""
+    """List all jobs in the Databricks workspace.
+
+    Args:
+        limit (int): Maximum number of jobs to return (default: 100)
+        name_filter (str, optional): Filter jobs by name containing this string
+
+    Returns:
+        str: JSON with schema:
+        {
+            "success": bool,
+            "data": {
+                "jobs": [{"job_id": int, "name": str, "created_time": int, "creator_user_name": str}],
+                "count": int,
+                "filters_applied": dict
+            }
+        }
+
+    Example:
+        >>> list_jobs(limit=10, name_filter="etl")
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
             return create_error_response("Databricks client not initialized")
-        
+
+        # Handle Field objects when called directly (not through MCP)
+        actual_limit = limit if isinstance(limit, int) else 100
+        actual_filter = name_filter if isinstance(name_filter, str) else None
+
         jobs_list = []
         count = 0
-        
+
         for job in workspace_client.jobs.list():
-            if count >= limit:
+            if count >= actual_limit:
                 break
-            
+
             # Apply name filter if provided
-            if name_filter and name_filter.lower() not in job.settings.name.lower():
+            if actual_filter and actual_filter.lower() not in job.settings.name.lower():
                 continue
-            
+
             jobs_list.append({
                 "job_id": job.job_id,
                 "name": job.settings.name,
@@ -110,20 +162,36 @@ async def list_jobs(
                 "creator_user_name": job.creator_user_name,
             })
             count += 1
-        
+
         return create_success_response({
             "jobs": jobs_list,
             "count": len(jobs_list),
-            "filters_applied": {"name_filter": name_filter} if name_filter else {}
+            "filters_applied": {"name_filter": actual_filter} if actual_filter else {}
         })
         
     except Exception as e:
         logger.error(f"Error listing jobs: {e}")
         return create_error_response(f"Failed to list jobs: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Get Job",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def get_job(job_id: int = Field(description="The ID of the job to retrieve")) -> str:
-    """Get detailed configuration for a specific job"""
+    """Get detailed configuration for a specific job.
+
+    Args:
+        job_id (int): The ID of the job to retrieve
+
+    Returns:
+        str: JSON with job configuration including tasks, clusters, and settings
+
+    Example:
+        >>> get_job(job_id=12345)
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -168,12 +236,31 @@ async def get_job(job_id: int = Field(description="The ID of the job to retrieve
         logger.error(f"Error getting job {job_id}: {e}")
         return create_error_response(f"Failed to get job {job_id}: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Run Job",
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def run_job(
     job_id: int = Field(description="The ID of the job to run"),
     notebook_params: Optional[Dict[str, str]] = Field(default=None, description="Parameters to pass to the job")
 ) -> str:
-    """Execute a job in the Databricks workspace"""
+    """Execute a job in the Databricks workspace.
+
+    WARNING: This triggers job execution which may incur compute costs.
+
+    Args:
+        job_id (int): The ID of the job to run
+        notebook_params (dict, optional): Parameters to pass to the job
+
+    Returns:
+        str: JSON with run_id and status
+
+    Example:
+        >>> run_job(job_id=12345, notebook_params={"date": "2024-01-01"})
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -195,12 +282,29 @@ async def run_job(
         logger.error(f"Error running job {job_id}: {e}")
         return create_error_response(f"Failed to run job {job_id}: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "List Notebooks",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def list_notebooks(
     path: str = Field(default="/", description="The workspace path to list notebooks from"),
     recursive: bool = Field(default=False, description="Whether to recursively list notebooks in subdirectories")
 ) -> str:
-    """List notebooks in a Databricks workspace path"""
+    """List notebooks in a Databricks workspace path.
+
+    Args:
+        path (str): The workspace path to list notebooks from (default: "/")
+        recursive (bool): Whether to recursively list subdirectories (default: False)
+
+    Returns:
+        str: JSON with list of notebooks and their metadata
+
+    Example:
+        >>> list_notebooks(path="/Workspace/Users", recursive=True)
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -240,12 +344,29 @@ async def list_notebooks(
         logger.error(f"Error listing notebooks at {path}: {e}")
         return create_error_response(f"Failed to list notebooks at {path}: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Export Notebook",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def export_notebook(
     path: str = Field(description="The workspace path of the notebook to export"),
     format: str = Field(default="SOURCE", description="Export format: SOURCE, HTML, JUPYTER, DBC")
 ) -> str:
-    """Export a notebook from the Databricks workspace"""
+    """Export a notebook from the Databricks workspace.
+
+    Args:
+        path (str): The workspace path of the notebook to export
+        format (str): Export format - SOURCE, HTML, JUPYTER, or DBC (default: SOURCE)
+
+    Returns:
+        str: JSON with notebook content in specified format
+
+    Example:
+        >>> export_notebook(path="/Workspace/Users/user/notebook", format="SOURCE")
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -283,14 +404,31 @@ async def export_notebook(
         logger.error(f"Error exporting notebook {path}: {e}")
         return create_error_response(f"Failed to export notebook {path}: {str(e)}")
 
-# New tools following reference implementation pattern
-
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Execute SQL",
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True
+})
 async def execute_dbsql(
     query: str = Field(description="SQL query to execute"),
     warehouse_id: Optional[str] = Field(default=None, description="SQL warehouse ID")
 ) -> str:
-    """Execute SQL query on Databricks SQL warehouse"""
+    """Execute SQL query on Databricks SQL warehouse.
+
+    WARNING: Can execute any SQL including DDL/DML operations.
+
+    Args:
+        query (str): SQL query to execute
+        warehouse_id (str, optional): SQL warehouse ID (uses default if not provided)
+
+    Returns:
+        str: JSON with query results as rows
+
+    Example:
+        >>> execute_dbsql("SELECT * FROM catalog.schema.table LIMIT 10")
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -326,9 +464,22 @@ async def execute_dbsql(
         logger.error(f"Error executing SQL: {e}")
         return create_error_response(f"Failed to execute SQL query: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "List Warehouses",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def list_warehouses() -> str:
-    """List available SQL warehouses"""
+    """List available SQL warehouses.
+
+    Returns:
+        str: JSON with list of warehouses and their status
+
+    Example:
+        >>> list_warehouses()
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -353,11 +504,27 @@ async def list_warehouses() -> str:
         logger.error(f"Error listing warehouses: {e}")
         return create_error_response(f"Failed to list warehouses: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "List DBFS Files",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def list_dbfs_files(
     path: str = Field(default="/", description="DBFS path to list")
 ) -> str:
-    """List files in Databricks File System"""
+    """List files in Databricks File System.
+
+    Args:
+        path (str): DBFS path to list (default: "/")
+
+    Returns:
+        str: JSON with list of files and directories
+
+    Example:
+        >>> list_dbfs_files(path="/FileStore/tables")
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:
@@ -384,12 +551,29 @@ async def list_dbfs_files(
         logger.error(f"Error listing DBFS files at {path}: {e}")
         return create_error_response(f"Failed to list DBFS files: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Generate Bundle from Job",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def generate_bundle_from_job(
     job_id: int = Field(description="The ID of the job to generate a bundle from"),
     output_dir: Optional[str] = Field(default=None, description="Output directory for the generated bundle (defaults to current directory)")
 ) -> str:
-    """Generate a Databricks Asset Bundle from an existing job using the native Databricks CLI command"""
+    """Generate a Databricks Asset Bundle from an existing job using the native Databricks CLI.
+
+    Args:
+        job_id (int): The ID of the job to generate a bundle from
+        output_dir (str, optional): Output directory for generated bundle
+
+    Returns:
+        str: JSON with bundle content and generated files list
+
+    Example:
+        >>> generate_bundle_from_job(job_id=12345, output_dir="./my-bundle")
+    """
     import subprocess
     import tempfile
     import os
@@ -474,9 +658,25 @@ async def generate_bundle_from_job(
         logger.error(f"Error generating bundle from job {job_id}: {e}")
         return create_error_response(f"Failed to generate bundle: {str(e)}")
 
-@mcp.tool()
+@mcp.tool(annotations={
+    "title": "Get Cluster",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True
+})
 async def get_cluster(cluster_id: str = Field(description="The cluster ID to fetch configuration for")) -> str:
-    """Get cluster configuration by ID for use in job cluster generation"""
+    """Get cluster configuration by ID for use in job cluster generation.
+
+    Args:
+        cluster_id (str): The cluster ID to fetch configuration for
+
+    Returns:
+        str: JSON with cluster configuration and job_cluster YAML snippet
+
+    Example:
+        >>> get_cluster(cluster_id="0123-456789-abc123")
+    """
     try:
         workspace_client = get_or_create_client()
         if not workspace_client:

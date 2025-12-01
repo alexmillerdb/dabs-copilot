@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Databricks MCP Server Evaluation
+
+  Per MCP Builder best practices (Phase 4):
+  - 10 complex, realistic questions
+  - Independent (no dependencies between questions)
+  - Read-only operations only
+  - Verifiable with single, definitive answers
+  - Stable answers that don't change over time
+
+  NOTE: Before running evaluations, update placeholder values
+  (job names, paths, IDs) with actual resources from your workspace.
+-->
+<evaluation>
+  <!-- Job Management Questions -->
+  <qa_pair>
+    <question>How many jobs exist in the Databricks workspace?</question>
+    <answer>UPDATE_WITH_ACTUAL_COUNT</answer>
+    <tools_needed>list_jobs</tools_needed>
+    <complexity>simple</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the job_id of the job with the oldest created_time?</question>
+    <answer>UPDATE_WITH_ACTUAL_JOB_ID</answer>
+    <tools_needed>list_jobs</tools_needed>
+    <complexity>moderate</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>How many jobs have "etl" or "ETL" in their name?</question>
+    <answer>UPDATE_WITH_ACTUAL_COUNT</answer>
+    <tools_needed>list_jobs</tools_needed>
+    <complexity>moderate</complexity>
+  </qa_pair>
+
+  <!-- Notebook Analysis Questions -->
+  <qa_pair>
+    <question>How many notebooks exist under /Workspace/Users/ path (non-recursive)?</question>
+    <answer>UPDATE_WITH_ACTUAL_COUNT</answer>
+    <tools_needed>list_notebooks</tools_needed>
+    <complexity>simple</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the language (PYTHON, SQL, SCALA, R) of the notebook at path UPDATE_WITH_ACTUAL_PATH?</question>
+    <answer>UPDATE_WITH_ACTUAL_LANGUAGE</answer>
+    <tools_needed>list_notebooks, export_notebook</tools_needed>
+    <complexity>moderate</complexity>
+  </qa_pair>
+
+  <!-- Cluster/Warehouse Questions -->
+  <qa_pair>
+    <question>How many SQL warehouses are available in the workspace?</question>
+    <answer>UPDATE_WITH_ACTUAL_COUNT</answer>
+    <tools_needed>list_warehouses</tools_needed>
+    <complexity>simple</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What is the spark_version of the cluster with ID UPDATE_WITH_CLUSTER_ID?</question>
+    <answer>UPDATE_WITH_ACTUAL_VERSION</answer>
+    <tools_needed>get_cluster</tools_needed>
+    <complexity>simple</complexity>
+  </qa_pair>
+
+  <!-- Multi-step Questions -->
+  <qa_pair>
+    <question>For the job with ID UPDATE_WITH_JOB_ID, how many tasks are defined in its configuration?</question>
+    <answer>UPDATE_WITH_ACTUAL_TASK_COUNT</answer>
+    <tools_needed>get_job</tools_needed>
+    <complexity>moderate</complexity>
+  </qa_pair>
+
+  <qa_pair>
+    <question>What workflow_type (etl, ml, or reporting) is detected when analyzing the notebook at UPDATE_WITH_NOTEBOOK_PATH?</question>
+    <answer>UPDATE_WITH_WORKFLOW_TYPE</answer>
+    <tools_needed>analyze_notebook</tools_needed>
+    <complexity>moderate</complexity>
+  </qa_pair>
+
+  <!-- Complex Multi-tool Questions -->
+  <qa_pair>
+    <question>What is the creator_user_name of the job that has the most tasks (by task count)?</question>
+    <answer>UPDATE_WITH_CREATOR_EMAIL</answer>
+    <tools_needed>list_jobs, get_job</tools_needed>
+    <complexity>complex</complexity>
+  </qa_pair>
+</evaluation>
