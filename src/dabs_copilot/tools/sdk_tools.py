@@ -270,56 +270,64 @@ async def get_cluster(args: dict[str, Any]) -> dict[str, Any]:
 # DAB TOOLS
 # =============================================================================
 
+async def _analyze_notebook_impl(notebook_path: str) -> dict[str, Any]:
+    """Internal implementation of notebook analysis.
+
+    This is a non-decorated function that can be called directly by other tools.
+    """
+    path = notebook_path
+
+    # Get content
+    if os.path.exists(path):
+        with open(path) as f:
+            content = f.read()
+    else:
+        from databricks.sdk.service import workspace as ws
+        client = _get_client()
+        export = await asyncio.to_thread(client.workspace.export, path=path, format=ws.ExportFormat.SOURCE)
+        content = base64.b64decode(export.content).decode('utf-8') if export.content else ""
+
+    # Analyze
+    file_type = 'sql' if path.endswith('.sql') else 'python' if path.endswith('.py') else 'notebook'
+
+    # Extract imports
+    import_pattern = r'(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    common_libs = {'pandas', 'numpy', 'sklearn', 'tensorflow', 'torch', 'mlflow', 'pyspark', 'databricks'}
+    imports = set(re.findall(import_pattern, content))
+    libraries = [lib for lib in imports if lib in common_libs]
+
+    # Extract widgets
+    widget_pattern = r'dbutils\.widgets\.\w+\(["\']([^"\']+)["\']'
+    widgets = list(set(re.findall(widget_pattern, content)))
+
+    # Detect workflow type
+    content_lower = content.lower()
+    if 'mlflow' in content_lower or 'model' in content_lower:
+        workflow_type = 'ml'
+    elif 'display(' in content or 'plot' in content_lower:
+        workflow_type = 'reporting'
+    elif '@dlt.' in content or 'import dlt' in content:
+        workflow_type = 'dlt'
+    else:
+        workflow_type = 'etl'
+
+    return {
+        "path": path,
+        "file_type": file_type,
+        "libraries": libraries,
+        "widgets": widgets,
+        "workflow_type": workflow_type,
+        "uses_spark": "spark" in content_lower,
+        "uses_mlflow": "mlflow" in content_lower,
+        "uses_dlt": "@dlt." in content or "import dlt" in content
+    }
+
+
 @tool("analyze_notebook", "Analyze notebook to extract libraries, parameters, and workflow patterns.", {"notebook_path": str})
 async def analyze_notebook(args: dict[str, Any]) -> dict[str, Any]:
     try:
         import json
-        path = args["notebook_path"]
-
-        # Get content
-        if os.path.exists(path):
-            with open(path) as f:
-                content = f.read()
-        else:
-            from databricks.sdk.service import workspace as ws
-            client = _get_client()
-            export = await asyncio.to_thread(client.workspace.export, path=path, format=ws.ExportFormat.SOURCE)
-            content = base64.b64decode(export.content).decode('utf-8') if export.content else ""
-
-        # Analyze
-        file_type = 'sql' if path.endswith('.sql') else 'python' if path.endswith('.py') else 'notebook'
-
-        # Extract imports
-        import_pattern = r'(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-        common_libs = {'pandas', 'numpy', 'sklearn', 'tensorflow', 'torch', 'mlflow', 'pyspark', 'databricks'}
-        imports = set(re.findall(import_pattern, content))
-        libraries = [lib for lib in imports if lib in common_libs]
-
-        # Extract widgets
-        widget_pattern = r'dbutils\.widgets\.\w+\(["\']([^"\']+)["\']'
-        widgets = list(set(re.findall(widget_pattern, content)))
-
-        # Detect workflow type
-        content_lower = content.lower()
-        if 'mlflow' in content_lower or 'model' in content_lower:
-            workflow_type = 'ml'
-        elif 'display(' in content or 'plot' in content_lower:
-            workflow_type = 'reporting'
-        elif '@dlt.' in content or 'import dlt' in content:
-            workflow_type = 'dlt'
-        else:
-            workflow_type = 'etl'
-
-        result = {
-            "path": path,
-            "file_type": file_type,
-            "libraries": libraries,
-            "widgets": widgets,
-            "workflow_type": workflow_type,
-            "uses_spark": "spark" in content_lower,
-            "uses_mlflow": "mlflow" in content_lower,
-            "uses_dlt": "@dlt." in content or "import dlt" in content
-        }
+        result = await _analyze_notebook_impl(args["notebook_path"])
         return {"content": [{"type": "text", "text": json.dumps(result)}]}
     except Exception as e:
         return {"content": [{"type": "text", "text": f'{{"error": "Analysis failed: {e}"}}'}]}
@@ -333,15 +341,18 @@ async def generate_bundle(args: dict[str, Any]) -> dict[str, Any]:
         file_paths = args["file_paths"]
         output_path = args.get("output_path") or f"./{bundle_name}"
 
+        # Ensure file_paths is a list (handle string input)
+        if isinstance(file_paths, str):
+            file_paths = [file_paths]
+
         os.makedirs(output_path, exist_ok=True)
 
-        # Analyze each file (simplified)
+        # Analyze each file using internal implementation
         analyses = []
         for path in file_paths:
             try:
-                result = await analyze_notebook({"notebook_path": path})
-                text = result["content"][0]["text"]
-                analyses.append(json.loads(text))
+                result = await _analyze_notebook_impl(path)
+                analyses.append(result)
             except Exception as e:
                 analyses.append({"path": path, "error": str(e)})
 
