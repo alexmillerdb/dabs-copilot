@@ -4,9 +4,11 @@ databricks-sdk==0.65.0
 
 # Claude Agent SDK
 claude-agent-sdk>=0.1.0
+# claude-agent>=0.1.0
+anthropic
 
 # MLflow for observability
-mlflow>=3.4.0
+mlflow>=3.5.0
 
 # Async HTTP client
 aiohttp>=3.9.0

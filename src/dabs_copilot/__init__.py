@@ -19,24 +19,31 @@ from .agent import (
     DABsAgent,
     generate_bundle,
     MCP_TOOLS,
-    DESTRUCTIVE_TOOLS,
+    MCP_DESTRUCTIVE_TOOLS,
     ALLOWED_TOOLS,
     DABS_AGENTS,
     DABS_SYSTEM_PROMPT,
+    CUSTOM_TOOLS_SERVER,
     get_mcp_config,
     get_project_root,
+    get_custom_tool_names,
+    get_custom_tools_allowed,
 )
 
-__version__ = "1.1.0"  # Added skills and subagents
+__version__ = "1.2.0"  # Added custom SDK tools support
 __all__ = [
     # Main agent
     "DABsAgent",
     # One-shot function
     "generate_bundle",
-    # Tool lists
+    # Tool lists (MCP mode)
     "MCP_TOOLS",
-    "DESTRUCTIVE_TOOLS",
+    "MCP_DESTRUCTIVE_TOOLS",
     "ALLOWED_TOOLS",
+    # Custom tools (in-process mode)
+    "CUSTOM_TOOLS_SERVER",
+    "get_custom_tool_names",
+    "get_custom_tools_allowed",
     # Subagent definitions
     "DABS_AGENTS",
     # Configuration helpers
