@@ -7,10 +7,15 @@ Features:
 - Confirmation prompts before destructive actions (deploy, delete)
 - Specialized subagents for discovery, analysis, generation, validation, deployment
 - Skills for DAB patterns and best practices
+- Dual-mode tools: MCP server (external) or custom tools (in-process)
 """
 import os
 from pathlib import Path
 from typing import AsyncIterator, Callable, Awaitable, Any
+from dotenv import load_dotenv
+
+import anthropic
+import mlflow.anthropic
 
 from claude_agent_sdk import (
     ClaudeSDKClient,
@@ -20,9 +25,36 @@ from claude_agent_sdk import (
     PermissionResultAllow,
     PermissionResultDeny,
     ToolPermissionContext,
+    ResultMessage,
 )
 
-# MCP tools available (called directly by name)
+# Import SDK tools for custom (in-process) mode
+# Handle both package and standalone imports
+try:
+    from .tools.sdk_tools import (
+        create_databricks_mcp_server,
+        get_tool_names as get_sdk_tool_names,
+        ALL_TOOLS as SDK_ALL_TOOLS,
+        CORE_TOOLS as SDK_CORE_TOOLS,
+        DAB_TOOLS as SDK_DAB_TOOLS,
+        WORKSPACE_TOOLS as SDK_WORKSPACE_TOOLS,
+        DESTRUCTIVE_TOOL_NAMES as SDK_DESTRUCTIVE_TOOL_NAMES,
+    )
+except ImportError:
+    from tools.sdk_tools import (
+        create_databricks_mcp_server,
+        get_tool_names as get_sdk_tool_names,
+        ALL_TOOLS as SDK_ALL_TOOLS,
+        CORE_TOOLS as SDK_CORE_TOOLS,
+        DAB_TOOLS as SDK_DAB_TOOLS,
+        WORKSPACE_TOOLS as SDK_WORKSPACE_TOOLS,
+        DESTRUCTIVE_TOOL_NAMES as SDK_DESTRUCTIVE_TOOL_NAMES,
+    )
+
+# Custom tools server name (for in-process mode)
+CUSTOM_TOOLS_SERVER = "databricks"
+
+# MCP tools available when using external MCP server
 MCP_TOOLS = [
     "mcp__databricks-mcp__health",
     "mcp__databricks-mcp__list_jobs",
@@ -43,23 +75,55 @@ MCP_TOOLS = [
     "mcp__databricks-mcp__sync_workspace_to_local",
 ]
 
-# Tools that require user confirmation before execution
-DESTRUCTIVE_TOOLS = [
+# Destructive tools for external MCP mode
+MCP_DESTRUCTIVE_TOOLS = [
     "mcp__databricks-mcp__run_job",
     "mcp__databricks-mcp__upload_bundle",
     "mcp__databricks-mcp__run_bundle_command",
 ]
 
-# All tools available to the agent (MCP + orchestration + file tools)
-ALLOWED_TOOLS = [
-    # Orchestration tools
+# Base tools available to the agent (orchestration + file tools)
+BASE_TOOLS = [
     "Skill",  # For loading DAB skill
     "Task",   # For spawning subagents
-    # File tools
     "Read", "Write", "Edit", "Glob", "Grep",
-    # MCP tools
-    *MCP_TOOLS,
 ]
+
+# All tools available in MCP mode
+ALLOWED_TOOLS = BASE_TOOLS + MCP_TOOLS
+
+load_dotenv()
+
+os.environ['DATABRICKS_HOST'] = os.getenv("DATABRICKS_HOST")
+os.environ['DATABRICKS_CONFIG_PROFILE'] = os.getenv("DATABRICKS_CONFIG_PROFILE")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "databricks"))
+mlflow.set_experiment(experiment_id=os.getenv("MLFLOW_EXPERIMENT_ID", "567797472279756"))
+mlflow.anthropic.autolog()
+
+
+def get_custom_tool_names(category: str | None = None) -> list[str]:
+    """Get tool names for custom tools mode.
+
+    Args:
+        category: Filter by category - "core", "dab", "workspace", or None for all
+
+    Returns:
+        List of MCP-formatted tool names (mcp__databricks__tool_name)
+    """
+    if category == "core":
+        tools = SDK_CORE_TOOLS
+    elif category == "dab":
+        tools = SDK_DAB_TOOLS
+    elif category == "workspace":
+        tools = SDK_WORKSPACE_TOOLS
+    else:
+        tools = SDK_ALL_TOOLS
+    return get_sdk_tool_names(tools, CUSTOM_TOOLS_SERVER)
+
+
+def get_custom_tools_allowed(category: str | None = None) -> list[str]:
+    """Get allowed tools list for custom tools mode."""
+    return BASE_TOOLS + get_custom_tool_names(category)
 
 
 def get_project_root() -> str:
@@ -490,19 +554,31 @@ class DABsAgent:
     """
     Interactive DABs Copilot agent with multi-turn conversation support.
 
+    Supports two tool modes:
+    - "mcp": Use external MCP server (stdio or HTTP) - default for production
+    - "custom": Use in-process custom tools via SDK MCP server - ideal for local development
+
     Usage:
+        # Auto-detect mode (uses MCP if DABS_MCP_SERVER_URL set)
         async with DABsAgent() as agent:
-            # First turn
             async for msg in agent.chat("Generate bundle from job 123"):
                 print(msg)
 
-            # Follow-up (remembers context)
-            async for msg in agent.chat("Now deploy it to dev"):
+        # Explicit custom tools mode (in-process, no external server)
+        async with DABsAgent(tool_mode="custom") as agent:
+            async for msg in agent.chat("List my jobs"):
+                print(msg)
+
+        # Custom tools with category filtering
+        async with DABsAgent(tool_mode="custom", tool_category="dab") as agent:
+            async for msg in agent.chat("Analyze notebook"):
                 print(msg)
     """
 
     def __init__(
         self,
+        tool_mode: str = "auto",
+        tool_category: str | None = None,
         confirm_destructive: Callable[[str, dict], Awaitable[bool]] | None = None,
         mcp_config: dict | None = None,
     ):
@@ -510,33 +586,98 @@ class DABsAgent:
         Initialize the agent.
 
         Args:
+            tool_mode: "auto" | "mcp" | "custom"
+                - auto: Use MCP if DABS_MCP_SERVER_URL set, else custom tools
+                - mcp: Use external MCP server (stdio or HTTP)
+                - custom: Use in-process SDK MCP server (no external server)
+            tool_category: Filter tools by category in custom mode:
+                - "core": health, jobs, notebooks, SQL, DBFS, clusters
+                - "dab": analyze, generate, validate bundles
+                - "workspace": upload, sync, run bundle commands
+                - None: all tools (default)
             confirm_destructive: Async callback for confirming destructive actions.
                                  Receives (tool_name, tool_input) and returns True to proceed.
                                  If None, destructive actions are auto-approved.
-            mcp_config: Optional custom MCP configuration. If None, uses environment config.
+            mcp_config: Optional custom MCP configuration (only used in mcp mode).
         """
         self._client: ClaudeSDKClient | None = None
         self._session_id: str | None = None
         self._confirm_destructive = confirm_destructive
-        self._mcp_config = mcp_config or get_mcp_config()
+        self._tool_category = tool_category
+
+        # Resolve tool mode
+        if tool_mode == "auto":
+            self._tool_mode = "mcp" if os.getenv("DABS_MCP_SERVER_URL") else "custom"
+        else:
+            self._tool_mode = tool_mode
+
+        # Configure MCP servers based on mode
+        if self._tool_mode == "mcp":
+            self._mcp_config = mcp_config or get_mcp_config()
+            self._sdk_mcp_server = None
+        else:
+            self._mcp_config = None
+            # Create in-process SDK MCP server with the appropriate tools
+            self._sdk_mcp_server = self._create_sdk_mcp_server()
+
+    def _create_sdk_mcp_server(self):
+        """Create SDK MCP server with filtered tools."""
+        if self._tool_category == "core":
+            tools = SDK_CORE_TOOLS
+        elif self._tool_category == "dab":
+            tools = SDK_DAB_TOOLS
+        elif self._tool_category == "workspace":
+            tools = SDK_WORKSPACE_TOOLS
+        else:
+            tools = SDK_ALL_TOOLS
+        return create_databricks_mcp_server(tools=tools, server_name=CUSTOM_TOOLS_SERVER)
+
+    def _get_mcp_servers(self) -> dict | None:
+        """Get MCP server configuration based on tool mode."""
+        if self._tool_mode == "mcp":
+            return self._mcp_config
+        # Custom mode - return SDK MCP server as dict
+        if self._sdk_mcp_server:
+            return {CUSTOM_TOOLS_SERVER: self._sdk_mcp_server}
+        return None
+
+    def _get_allowed_tools(self) -> list[str]:
+        """Get allowed tools list based on tool mode."""
+        if self._tool_mode == "mcp":
+            return ALLOWED_TOOLS
+        return get_custom_tools_allowed(self._tool_category)
+
+    def _get_destructive_tools(self) -> list[str]:
+        """Get destructive tool names based on tool mode."""
+        if self._tool_mode == "mcp":
+            return MCP_DESTRUCTIVE_TOOLS
+        # Map to custom tool names
+        return [f"mcp__{CUSTOM_TOOLS_SERVER}__{name}" for name in SDK_DESTRUCTIVE_TOOL_NAMES]
 
     async def __aenter__(self):
         """Start the agent session."""
-        options = ClaudeAgentOptions(
-            allowed_tools=ALLOWED_TOOLS,
-            mcp_servers=self._mcp_config,
-            system_prompt={
+        mcp_servers = self._get_mcp_servers()
+
+        # Build options based on tool mode
+        options_kwargs = {
+            "allowed_tools": self._get_allowed_tools(),
+            "system_prompt": {
                 "type": "preset",
                 "preset": "claude_code",
                 "append": DABS_SYSTEM_PROMPT,
             },
-            permission_mode="default",
-            can_use_tool=self._check_tool_permission if self._confirm_destructive else None,
-            # Skills and subagents
-            cwd=get_project_root(),
-            setting_sources=["project"],
-            agents=DABS_AGENTS,
-        )
+            "permission_mode": "default",
+            "can_use_tool": self._check_tool_permission if self._confirm_destructive else None,
+            "cwd": get_project_root(),
+            "setting_sources": ["project"],
+            "agents": DABS_AGENTS,
+        }
+
+        # Add mcp_servers (either external MCP or in-process SDK server)
+        if mcp_servers:
+            options_kwargs["mcp_servers"] = mcp_servers
+
+        options = ClaudeAgentOptions(**options_kwargs)
 
         self._client = ClaudeSDKClient(options=options)
         await self._client.connect()
@@ -551,14 +692,18 @@ class DABsAgent:
     async def _check_tool_permission(
         self, tool_name: str, tool_input: dict, context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
-        """
-        Permission callback - pause for confirmation on destructive actions.
-        """
-        if tool_name in DESTRUCTIVE_TOOLS and self._confirm_destructive:
+        """Permission callback - pause for confirmation on destructive actions."""
+        destructive = self._get_destructive_tools()
+        if tool_name in destructive and self._confirm_destructive:
             approved = await self._confirm_destructive(tool_name, tool_input)
             if not approved:
                 return PermissionResultDeny(message="User cancelled the operation")
         return PermissionResultAllow(updated_input=tool_input)
+
+    @property
+    def tool_mode(self) -> str:
+        """Current tool mode (mcp or custom)."""
+        return self._tool_mode
 
     async def chat(self, message: str, session_id: str = "default") -> AsyncIterator[Any]:
         """
@@ -585,6 +730,9 @@ class DABsAgent:
                     if hasattr(msg, "session_id"):
                         self._session_id = msg.session_id
             yield msg
+            # Break on ResultMessage - indicates turn is complete
+            if isinstance(msg, ResultMessage):
+                break
 
     @property
     def session_id(self) -> str | None:
@@ -595,7 +743,8 @@ class DABsAgent:
 # Convenience function for one-shot usage
 async def generate_bundle(
     prompt: str,
-    session_id: str | None = None,
+    tool_mode: str = "auto",
+    tool_category: str | None = None,
     mcp_config: dict | None = None,
 ) -> AsyncIterator[Any]:
     """
@@ -605,32 +754,18 @@ async def generate_bundle(
 
     Args:
         prompt: User's request (e.g., "Generate a bundle from job 123")
-        session_id: Optional session ID to resume a previous conversation
-        mcp_config: Optional custom MCP configuration
+        tool_mode: "auto" | "mcp" | "custom" - tool mode selection
+        tool_category: Filter tools by category in custom mode ("core", "dab", "workspace")
+        mcp_config: Optional custom MCP configuration (mcp mode only)
 
     Yields:
         SDK messages (tool calls, responses, results)
-
-    Environment Variables:
-        DABS_MCP_SERVER_URL: MCP server URL (for HTTP/SSE mode)
-        DABS_MCP_COMMAND: Command to run MCP server (default: python)
-        DABS_MCP_ARGS: Comma-separated args for MCP server (default: -m,mcp_server)
     """
-    options = ClaudeAgentOptions(
-        allowed_tools=ALLOWED_TOOLS,
-        mcp_servers=mcp_config or get_mcp_config(),
-        system_prompt={
-            "type": "preset",
-            "preset": "claude_code",
-            "append": DABS_SYSTEM_PROMPT,
-        },
-        permission_mode="acceptEdits",
-        resume=session_id,
-        # Skills and subagents
-        cwd=get_project_root(),
-        setting_sources=["project"],
-        agents=DABS_AGENTS,
-    )
-
-    async for message in query(prompt=prompt, options=options):
-        yield message
+    # Use DABsAgent internally for proper SDK client lifecycle management
+    async with DABsAgent(
+        tool_mode=tool_mode,
+        tool_category=tool_category,
+        mcp_config=mcp_config,
+    ) as agent:
+        async for msg in agent.chat(prompt):
+            yield msg

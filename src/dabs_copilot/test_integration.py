@@ -7,6 +7,7 @@ Run with: python -m src.dabs_copilot.test_integration
 import asyncio
 import os
 import sys
+from dotenv import load_dotenv
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -17,7 +18,9 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from agent import DABsAgent, generate_bundle, MCP_TOOLS, DESTRUCTIVE_TOOLS, DABS_AGENTS
+from agent import DABsAgent, MCP_TOOLS, MCP_DESTRUCTIVE_TOOLS, DABS_AGENTS, CUSTOM_TOOLS_SERVER
+
+load_dotenv()
 
 
 def print_message(msg):
@@ -51,24 +54,6 @@ async def confirm_action(tool_name: str, tool_input: dict) -> bool:
     print(f"   Input: {tool_input}")
     response = input("   Proceed? [y/N]: ")
     return response.lower() == "y"
-
-
-async def test_one_shot():
-    """Test one-shot generation."""
-    print("\n" + "=" * 60)
-    print("TEST: One-shot generate_bundle()")
-    print("=" * 60)
-
-    prompt = "List the first 3 jobs in the workspace"
-    print(f"\nPrompt: {prompt}")
-    print("-" * 40)
-
-    try:
-        async for msg in generate_bundle(prompt):
-            print_message(msg)
-    except Exception as e:
-        print(f"✗ Error: {e}")
-        raise
 
 
 async def test_interactive():
@@ -110,8 +95,9 @@ async def main():
     print("=" * 60)
 
     print(f"\nMCP Tools available: {len(MCP_TOOLS)}")
-    print(f"Destructive tools: {len(DESTRUCTIVE_TOOLS)}")
+    print(f"Destructive tools (MCP mode): {len(MCP_DESTRUCTIVE_TOOLS)}")
     print(f"Subagents defined: {len(DABS_AGENTS)}")
+    print(f"Custom tools server: {CUSTOM_TOOLS_SERVER}")
 
     # Check environment
     mcp_url = os.getenv("DABS_MCP_SERVER_URL")
@@ -122,7 +108,6 @@ async def main():
 
     # Run tests
     try:
-        await test_one_shot()
         await test_interactive()
 
         print("\n" + "=" * 60)
