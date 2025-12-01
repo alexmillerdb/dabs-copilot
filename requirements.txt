@@ -4,8 +4,14 @@ databricks-sdk==0.65.0
 
 # Claude Agent SDK
 claude-agent-sdk>=0.1.0
-# claude-agent>=0.1.0
-anthropic
+anthropic>=0.18.0
+
+# CLI Framework
+typer[all]>=0.9.0
+rich>=13.0.0
+
+# LiteLLM for proxy support (Databricks FMAPI)
+litellm>=1.40.0
 
 # MLflow for observability
 mlflow>=3.5.0

@@ -246,7 +246,7 @@ Return a structured discovery result:
             "mcp__databricks-mcp__list_jobs",
             "Read", "Glob",
         ],
-        model="haiku",
+        model="sonnet",
     ),
 
     "dab-analyzer": AgentDefinition(
@@ -308,7 +308,7 @@ Return analysis for each file:
 - Note any special requirements (GPU, ML runtime, etc.)
 """,
         tools=["mcp__databricks-mcp__analyze_notebook", "Read", "Grep"],
-        model="haiku",
+        model="sonnet",
     ),
 
     "dab-generator": AgentDefinition(
@@ -442,7 +442,7 @@ You are a validation agent for Databricks Asset Bundles. Your role is to validat
 - After fixes, always re-validate to confirm resolution
 """,
         tools=["mcp__databricks-mcp__validate_bundle", "Read", "Edit"],
-        model="haiku",
+        model="sonnet",
     ),
 
     "dab-deployer": AgentDefinition(
@@ -515,7 +515,7 @@ You are a deployment agent for Databricks Asset Bundles. Your role is to upload 
             "mcp__databricks-mcp__run_bundle_command",
             "mcp__databricks-mcp__sync_workspace_to_local",
         ],
-        model="haiku",
+        model="sonnet",
     ),
 }
 
@@ -671,6 +671,8 @@ class DABsAgent:
             "cwd": get_project_root(),
             "setting_sources": ["project"],
             "agents": DABS_AGENTS,
+            # Model for main agent (env var allows override for Databricks FMAPI via LiteLLM)
+            "model": os.getenv("DABS_MODEL", "claude-sonnet-4-20250514"),
         }
 
         # Add mcp_servers (either external MCP or in-process SDK server)

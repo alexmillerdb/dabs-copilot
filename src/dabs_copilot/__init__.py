@@ -10,14 +10,13 @@ Usage:
         async for msg in agent.chat("Generate bundle from job 123"):
             print(msg)
 
-    # One-shot
-    async for msg in generate_bundle("Generate bundle from job 123"):
-        print(msg)
+    # CLI usage
+    # dabs-copilot generate 12345 --name my-bundle
+    # dabs-copilot chat
 """
 
 from .agent import (
     DABsAgent,
-    generate_bundle,
     MCP_TOOLS,
     MCP_DESTRUCTIVE_TOOLS,
     ALLOWED_TOOLS,
@@ -30,12 +29,10 @@ from .agent import (
     get_custom_tools_allowed,
 )
 
-__version__ = "1.2.0"  # Added custom SDK tools support
+__version__ = "1.3.0"  # Added CLI support
 __all__ = [
     # Main agent
     "DABsAgent",
-    # One-shot function
-    "generate_bundle",
     # Tool lists (MCP mode)
     "MCP_TOOLS",
     "MCP_DESTRUCTIVE_TOOLS",

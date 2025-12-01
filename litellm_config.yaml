@@ -1,0 +1,35 @@
+model_list:
+  # Main agent - Opus 4.5 (routes to Databricks Sonnet 4.5)
+  - model_name: claude-opus-4-5-20251101
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
+
+  # Subagents - Sonnet 4
+  - model_name: claude-sonnet-4-20250514
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
+
+  # Sonnet 4.5
+  - model_name: claude-sonnet-4-5-20250929
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
+
+  # Claude 3.5 Sonnet (legacy)
+  - model_name: claude-3-5-sonnet-20241022
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
+
+  # Short alias used by subagents
+  - model_name: sonnet
+    litellm_params:
+      model: databricks/databricks-claude-sonnet-4-5
+      api_key: os.environ/DATABRICKS_API_KEY
+      api_base: os.environ/DATABRICKS_API_BASE
