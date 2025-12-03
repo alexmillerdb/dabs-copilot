@@ -51,37 +51,59 @@ except ImportError:
         DESTRUCTIVE_TOOL_NAMES as SDK_DESTRUCTIVE_TOOL_NAMES,
     )
 
+# Import prompts (handle both package and standalone imports)
+try:
+    from .prompts import (
+        SUBAGENT_ANALYST,
+        SUBAGENT_BUILDER,
+        SUBAGENT_DEPLOYER,
+        DAB_ANALYST_PROMPT,
+        DAB_BUILDER_PROMPT,
+        DAB_DEPLOYER_PROMPT,
+        DABS_SYSTEM_PROMPT,
+    )
+except ImportError:
+    from prompts import (
+        SUBAGENT_ANALYST,
+        SUBAGENT_BUILDER,
+        SUBAGENT_DEPLOYER,
+        DAB_ANALYST_PROMPT,
+        DAB_BUILDER_PROMPT,
+        DAB_DEPLOYER_PROMPT,
+        DABS_SYSTEM_PROMPT,
+    )
+
 # Custom tools server name (for in-process mode)
 # Must match MCP server name for consistent tool naming across modes
 CUSTOM_TOOLS_SERVER = "databricks-mcp"
 
-# MCP tools available when using external MCP server
-MCP_TOOLS = [
-    "mcp__databricks-mcp__health",
-    "mcp__databricks-mcp__list_jobs",
-    "mcp__databricks-mcp__get_job",
-    "mcp__databricks-mcp__run_job",
-    "mcp__databricks-mcp__list_notebooks",
-    "mcp__databricks-mcp__export_notebook",
-    "mcp__databricks-mcp__execute_dbsql",
-    "mcp__databricks-mcp__list_warehouses",
-    "mcp__databricks-mcp__list_dbfs_files",
-    "mcp__databricks-mcp__get_cluster",
-    "mcp__databricks-mcp__analyze_notebook",
-    "mcp__databricks-mcp__generate_bundle",
-    "mcp__databricks-mcp__generate_bundle_from_job",
-    "mcp__databricks-mcp__validate_bundle",
-    "mcp__databricks-mcp__upload_bundle",
-    "mcp__databricks-mcp__run_bundle_command",
-    "mcp__databricks-mcp__sync_workspace_to_local",
+# Base tool names (without MCP prefix)
+_MCP_TOOL_NAMES = [
+    "health",
+    "list_jobs",
+    "get_job",
+    "run_job",
+    "list_notebooks",
+    "export_notebook",
+    "execute_dbsql",
+    "list_warehouses",
+    "list_dbfs_files",
+    "get_cluster",
+    "analyze_notebook",
+    "generate_bundle",
+    "generate_bundle_from_job",
+    "validate_bundle",
+    "upload_bundle",
+    "run_bundle_command",
+    "sync_workspace_to_local",
 ]
 
-# Destructive tools for external MCP mode
-MCP_DESTRUCTIVE_TOOLS = [
-    "mcp__databricks-mcp__run_job",
-    "mcp__databricks-mcp__upload_bundle",
-    "mcp__databricks-mcp__run_bundle_command",
-]
+# Destructive tool names (subset that requires confirmation)
+_MCP_DESTRUCTIVE_NAMES = ["run_job", "upload_bundle", "run_bundle_command"]
+
+# Generate MCP-formatted tool names
+MCP_TOOLS = [f"mcp__{CUSTOM_TOOLS_SERVER}__{name}" for name in _MCP_TOOL_NAMES]
+MCP_DESTRUCTIVE_TOOLS = [f"mcp__{CUSTOM_TOOLS_SERVER}__{name}" for name in _MCP_DESTRUCTIVE_NAMES]
 
 # Base tools available to the agent (orchestration + file tools)
 BASE_TOOLS = [
@@ -106,6 +128,26 @@ mlflow.set_experiment(experiment_id=os.getenv("MLFLOW_EXPERIMENT_ID", "567797472
 mlflow.anthropic.autolog()
 
 
+def _get_tools_by_category(category: str | None) -> list:
+    """Get SDK tool list for a category.
+
+    Args:
+        category: "core", "dab", "workspace", or None for all
+
+    Returns:
+        List of SDK tool definitions
+    """
+    match category:
+        case "core":
+            return SDK_CORE_TOOLS
+        case "dab":
+            return SDK_DAB_TOOLS
+        case "workspace":
+            return SDK_WORKSPACE_TOOLS
+        case _:
+            return SDK_ALL_TOOLS
+
+
 def get_custom_tool_names(category: str | None = None) -> list[str]:
     """Get tool names for custom tools mode.
 
@@ -115,15 +157,7 @@ def get_custom_tool_names(category: str | None = None) -> list[str]:
     Returns:
         List of MCP-formatted tool names (mcp__databricks__tool_name)
     """
-    if category == "core":
-        tools = SDK_CORE_TOOLS
-    elif category == "dab":
-        tools = SDK_DAB_TOOLS
-    elif category == "workspace":
-        tools = SDK_WORKSPACE_TOOLS
-    else:
-        tools = SDK_ALL_TOOLS
-    return get_sdk_tool_names(tools, CUSTOM_TOOLS_SERVER)
+    return get_sdk_tool_names(_get_tools_by_category(category), CUSTOM_TOOLS_SERVER)
 
 
 def get_custom_tools_allowed(category: str | None = None) -> list[str]:
@@ -151,41 +185,9 @@ def get_project_root() -> str:
 # =============================================================================
 
 DABS_AGENTS = {
-    "dab-analyst": AgentDefinition(
+    SUBAGENT_ANALYST: AgentDefinition(
         description="Analyzes Databricks jobs and notebooks. EXECUTES get_job, list_notebooks, analyze_notebook tools.",
-        prompt="""## CRITICAL: You MUST Execute Tools
-
-You are an EXECUTING agent. Call MCP tools and return REAL data.
-DO NOT provide guidance or frameworks. CALL THE TOOLS.
-
-## Your Capabilities
-- Discover jobs: get_job, list_jobs
-- Discover notebooks: list_notebooks, export_notebook
-- Analyze code: analyze_notebook
-- Get cluster info: get_cluster
-
-## Task Execution
-
-**For job analysis:**
-1. CALL mcp__databricks-mcp__get_job(job_id=<id>)
-2. Extract notebook paths from the tasks array in the response
-3. CALL mcp__databricks-mcp__analyze_notebook for each notebook path
-4. Return compiled results with ACTUAL data from the tool calls
-
-**For workspace analysis:**
-1. CALL mcp__databricks-mcp__list_notebooks(path=<path>, recursive=true)
-2. CALL mcp__databricks-mcp__analyze_notebook for each notebook found
-3. Return compiled results
-
-**For job search:**
-1. CALL mcp__databricks-mcp__list_jobs(name_filter=<pattern>) if searching
-2. Return the list of matching jobs
-
-## Response Requirements
-
-Your response MUST contain data from tool calls, not guesses or frameworks.
-If you haven't called a tool, you haven't completed your task.
-""",
+        prompt=DAB_ANALYST_PROMPT,
         tools=[
             "mcp__databricks-mcp__get_job",
             "mcp__databricks-mcp__list_jobs",
@@ -197,40 +199,9 @@ If you haven't called a tool, you haven't completed your task.
         ],
         model="inherit",
     ),
-
-    "dab-builder": AgentDefinition(
+    SUBAGENT_BUILDER: AgentDefinition(
         description="Generates and validates DAB bundles. EXECUTES generate_bundle, validate_bundle tools.",
-        prompt="""## CRITICAL: You MUST Execute Tools
-
-You are an EXECUTING agent. Generate bundle YAML and validate it.
-DO NOT describe what a bundle would look like. CREATE IT.
-
-## Your Capabilities
-- Generate from job: generate_bundle_from_job
-- Generate from files: generate_bundle
-- Validate: validate_bundle
-- Write files: Write, Edit
-
-## Task Execution
-
-**For job-based bundle:**
-1. CALL mcp__databricks-mcp__generate_bundle_from_job(job_id=<id>)
-2. Review the generated YAML in the response
-3. CALL mcp__databricks-mcp__validate_bundle(bundle_path=<path>)
-4. If validation fails, fix errors and re-validate
-5. Return the final databricks.yml content
-
-**For file-based bundle:**
-1. CALL mcp__databricks-mcp__generate_bundle(bundle_name=<name>, file_paths=[...])
-2. Use Write tool to save databricks.yml to the output path
-3. CALL mcp__databricks-mcp__validate_bundle(bundle_path=<path>)
-4. Return the bundle path and content
-
-## Response Requirements
-
-Your response MUST include actual generated YAML, not templates or placeholders.
-If validation fails, include the errors and your fixes.
-""",
+        prompt=DAB_BUILDER_PROMPT,
         tools=[
             "mcp__databricks-mcp__generate_bundle",
             "mcp__databricks-mcp__generate_bundle_from_job",
@@ -239,40 +210,9 @@ If validation fails, include the errors and your fixes.
         ],
         model="inherit",
     ),
-
-    "dab-deployer": AgentDefinition(
+    SUBAGENT_DEPLOYER: AgentDefinition(
         description="Deploys bundles to Databricks workspace. EXECUTES upload_bundle, run_bundle_command tools.",
-        prompt="""## CRITICAL: You MUST Execute Tools
-
-You are an EXECUTING agent. Upload and deploy bundles.
-DO NOT describe deployment steps. EXECUTE THEM.
-
-## Your Capabilities
-- Upload: upload_bundle
-- Run commands: run_bundle_command (validate, deploy, run)
-- Sync: sync_workspace_to_local
-
-## Task Execution
-
-**For deployment:**
-1. CALL mcp__databricks-mcp__upload_bundle(yaml_content=<yaml>, bundle_name=<name>)
-2. Note the workspace_path from the response
-3. CALL mcp__databricks-mcp__run_bundle_command(workspace_path=<path>, command="deploy", target="dev")
-4. Return workspace path and deployment status
-
-**For workspace validation:**
-1. CALL mcp__databricks-mcp__run_bundle_command(workspace_path=<path>, command="validate")
-2. Return validation results
-
-**For syncing to local:**
-1. CALL mcp__databricks-mcp__sync_workspace_to_local(workspace_path=<path>, local_path=<local>)
-2. Return list of synced files
-
-## Response Requirements
-
-Your response MUST include actual deployment results, not instructions.
-Include the workspace path and any CLI commands for follow-up actions.
-""",
+        prompt=DAB_DEPLOYER_PROMPT,
         tools=[
             "mcp__databricks-mcp__upload_bundle",
             "mcp__databricks-mcp__run_bundle_command",
@@ -281,43 +221,6 @@ Include the workspace path and any CLI commands for follow-up actions.
         model="inherit",
     ),
 }
-
-
-DABS_SYSTEM_PROMPT = """
-## DABs Copilot
-
-You orchestrate Databricks Asset Bundle operations.
-
-## When to Use Subagents (Task tool)
-
-| subagent_type | Use When | Returns |
-|---------------|----------|---------|
-| dab-analyst | Analyzing jobs, notebooks, workspace paths | Job config, notebook analysis, dependencies |
-| dab-builder | Creating or validating bundles | Generated databricks.yml, validation results |
-| dab-deployer | Uploading or deploying bundles | Workspace paths, deployment status |
-
-## Workflow Example
-
-1. User: "Create bundle from job 12345"
-2. You → dab-analyst: "Analyze job 12345" → Returns job structure + notebook analysis
-3. You → dab-builder: "Generate bundle from job 12345 with analysis: [results]" → Returns databricks.yml
-4. Ask user: "Ready to deploy?"
-5. You → dab-deployer: "Deploy bundle [name] with yaml: [content]" → Returns workspace path
-
-## Direct Tool Use
-
-For simple queries, use MCP tools directly (no subagent needed):
-- "List my jobs" → Call list_jobs directly
-- "Check connection" → Call health directly
-- "Get job 123" → Call get_job directly
-
-## Important
-
-- Subagents EXECUTE tools and return REAL data
-- Pass specific IDs/paths to subagents in your prompt
-- Expect actual results back, not guidance or frameworks
-- Provide progress updates between subagent calls
-"""
 
 
 def get_mcp_config() -> dict:
@@ -386,6 +289,13 @@ class DABsAgent:
                                  If None, destructive actions are auto-approved.
             mcp_config: Optional custom MCP configuration (only used in mcp mode).
         """
+        # Validate tool_mode parameter
+        valid_tool_modes = {"auto", "mcp", "custom"}
+        if tool_mode not in valid_tool_modes:
+            raise ValueError(
+                f"Invalid tool_mode '{tool_mode}'. Must be one of {valid_tool_modes}"
+            )
+
         self._client: ClaudeSDKClient | None = None
         self._session_id: str | None = None
         self._confirm_destructive = confirm_destructive
@@ -408,14 +318,7 @@ class DABsAgent:
 
     def _create_sdk_mcp_server(self):
         """Create SDK MCP server with filtered tools."""
-        if self._tool_category == "core":
-            tools = SDK_CORE_TOOLS
-        elif self._tool_category == "dab":
-            tools = SDK_DAB_TOOLS
-        elif self._tool_category == "workspace":
-            tools = SDK_WORKSPACE_TOOLS
-        else:
-            tools = SDK_ALL_TOOLS
+        tools = _get_tools_by_category(self._tool_category)
         return create_databricks_mcp_server(tools=tools, server_name=CUSTOM_TOOLS_SERVER)
 
     def _get_mcp_servers(self) -> dict | None:
@@ -442,14 +345,12 @@ class DABsAgent:
 
     async def __aenter__(self):
         """Start the agent session."""
-        mcp_servers = self._get_mcp_servers()
-
         # Use LiteLLM proxy as ANTHROPIC_BASE_URL if configured
         # Claude Agent SDK reads ANTHROPIC_BASE_URL from environment
         if litellm_base := os.getenv("LITELLM_API_BASE"):
             os.environ["ANTHROPIC_BASE_URL"] = litellm_base
 
-        # Build options based on tool mode
+        # Build base options
         options_kwargs = {
             "allowed_tools": self._get_allowed_tools(),
             "system_prompt": {
@@ -458,22 +359,29 @@ class DABsAgent:
                 "append": DABS_SYSTEM_PROMPT,
             },
             "permission_mode": "default",
-            "can_use_tool": self._check_tool_permission if self._confirm_destructive else None,
             "cwd": get_project_root(),
             "setting_sources": ["project"],
             "agents": DABS_AGENTS,
-            # Model for main agent (env var allows override for Databricks FMAPI via LiteLLM)
             "model": os.getenv("DABS_MODEL", "databricks-claude-sonnet-4-5"),
         }
 
-        # Add mcp_servers (either external MCP or in-process SDK server)
-        if mcp_servers:
+        # Add permission callback if destructive action confirmation is enabled
+        if self._confirm_destructive:
+            options_kwargs["can_use_tool"] = self._check_tool_permission
+
+        # Add MCP servers (either external MCP or in-process SDK server)
+        if mcp_servers := self._get_mcp_servers():
             options_kwargs["mcp_servers"] = mcp_servers
 
         options = ClaudeAgentOptions(**options_kwargs)
 
         self._client = ClaudeSDKClient(options=options)
-        await self._client.connect()
+        try:
+            await self._client.connect()
+        except Exception as e:
+            # Cleanup on connection failure
+            self._client = None
+            raise RuntimeError(f"Failed to connect DABs agent: {e}") from e
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -486,11 +394,19 @@ class DABsAgent:
         self, tool_name: str, tool_input: dict, _context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
         """Permission callback - pause for confirmation on destructive actions."""
-        destructive = self._get_destructive_tools()
-        if tool_name in destructive and self._confirm_destructive:
-            approved = await self._confirm_destructive(tool_name, tool_input)
-            if not approved:
-                return PermissionResultDeny(message="User cancelled the operation")
+        # Allow non-destructive tools immediately
+        if tool_name not in self._get_destructive_tools():
+            return PermissionResultAllow(updated_input=tool_input)
+
+        # No confirmation callback configured - auto-approve
+        if not self._confirm_destructive:
+            return PermissionResultAllow(updated_input=tool_input)
+
+        # Ask for confirmation
+        approved = await self._confirm_destructive(tool_name, tool_input)
+        if not approved:
+            return PermissionResultDeny(message="User cancelled the operation")
+
         return PermissionResultAllow(updated_input=tool_input)
 
     @property
@@ -514,18 +430,21 @@ class DABsAgent:
                 "Agent not started. Use 'async with DABsAgent() as agent:'"
             )
 
-        await self._client.query(message, session_id=session_id)
+        try:
+            await self._client.query(message, session_id=session_id)
 
-        async for msg in self._client.receive_messages():
-            # Capture session ID from init message
-            if hasattr(msg, "type") and msg.type == "system":
-                if hasattr(msg, "subtype") and msg.subtype == "init":
-                    if hasattr(msg, "session_id"):
-                        self._session_id = msg.session_id
-            yield msg
-            # Break on ResultMessage - indicates turn is complete
-            if isinstance(msg, ResultMessage):
-                break
+            async for msg in self._client.receive_messages():
+                # Capture session ID from init message
+                if hasattr(msg, "type") and msg.type == "system":
+                    if hasattr(msg, "subtype") and msg.subtype == "init":
+                        if hasattr(msg, "session_id"):
+                            self._session_id = msg.session_id
+                yield msg
+                # Break on ResultMessage - indicates turn is complete
+                if isinstance(msg, ResultMessage):
+                    break
+        except Exception as e:
+            yield {"type": "error", "error": str(e)}
 
     @property
     def session_id(self) -> str | None:

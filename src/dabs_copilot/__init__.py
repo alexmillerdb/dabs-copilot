@@ -29,7 +29,7 @@ from .agent import (
     get_custom_tools_allowed,
 )
 
-__version__ = "1.3.0"  # Added CLI support
+__version__ = "1.4.0"  # Code review refactoring
 __all__ = [
     # Main agent
     "DABsAgent",
