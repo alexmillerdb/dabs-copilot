@@ -1,0 +1,160 @@
+digraph DABsCopilot {
+    rankdir=TB;
+    compound=true;
+    fontname="Helvetica";
+    node [fontname="Helvetica", shape=box, style="rounded,filled"];
+    edge [fontname="Helvetica"];
+
+    // Color scheme
+    // Entry points: green
+    // Core modules: blue
+    // CLI modules: orange
+    // Tools: purple
+    // Subagents: cyan
+    // External: gray
+
+    // ============ ENTRY POINTS ============
+    subgraph cluster_entry {
+        label="Entry Points";
+        style="rounded,dashed";
+        bgcolor="#f0fff0";
+
+        cli_main [label="cli/main.py\n(Typer App)", fillcolor="#90EE90"];
+        interactive_test [label="interactive_test.py\n(REPL)", fillcolor="#90EE90"];
+        sdk_entry [label="SDK Import\n(Programmatic)", fillcolor="#90EE90"];
+    }
+
+    // ============ CLI LAYER ============
+    subgraph cluster_cli {
+        label="CLI Layer";
+        style="rounded";
+        bgcolor="#fff5e6";
+
+        subgraph cluster_commands {
+            label="Commands";
+            style="rounded,dashed";
+            bgcolor="#ffe4c4";
+
+            cmd_chat [label="commands/chat.py\n/chat", fillcolor="#FFA500"];
+            cmd_generate [label="commands/generate.py\n/generate", fillcolor="#FFA500"];
+            cmd_validate [label="commands/validate.py\n/validate", fillcolor="#FFA500"];
+            cmd_deploy [label="commands/deploy.py\n/deploy", fillcolor="#FFA500"];
+        }
+
+        cli_auth [label="cli/auth.py\nAuthentication", fillcolor="#FFD700"];
+        cli_utils [label="cli/utils.py\nUtilities", fillcolor="#FFD700"];
+        cli_output [label="cli/output.py\nStreamingOutputHandler", fillcolor="#FFD700"];
+    }
+
+    // ============ CORE AGENT ============
+    subgraph cluster_core {
+        label="Core Agent Layer";
+        style="rounded";
+        bgcolor="#e6f3ff";
+
+        agent [label="agent.py\nDABsAgent", fillcolor="#4169E1", fontcolor="white"];
+
+        subgraph cluster_subagents {
+            label="Subagent Definitions";
+            style="rounded,dashed";
+            bgcolor="#b0e0e6";
+
+            sa_orchestrator [label="dab-orchestrator\nCoordinates workflow", fillcolor="#00CED1"];
+            sa_discovery [label="dab-discovery\nFinds resources", fillcolor="#00CED1"];
+            sa_analyzer [label="dab-analyzer\nAnalyzes code", fillcolor="#00CED1"];
+            sa_generator [label="dab-generator\nCreates YAML", fillcolor="#00CED1"];
+            sa_validator [label="dab-validator\nValidates configs", fillcolor="#00CED1"];
+            sa_deployer [label="dab-deployer\nDeploys bundles", fillcolor="#00CED1"];
+        }
+    }
+
+    // ============ TOOLS LAYER ============
+    subgraph cluster_tools {
+        label="Tools Layer";
+        style="rounded";
+        bgcolor="#f5e6ff";
+
+        sdk_tools [label="tools/sdk_tools.py\n27 Custom Tools", fillcolor="#9370DB", fontcolor="white"];
+
+        subgraph cluster_tool_categories {
+            label="Tool Categories";
+            style="rounded,dashed";
+            bgcolor="#e6d5f2";
+
+            tools_core [label="Core Tools (10)\nhealth, list_jobs,\nget_job, run_job,\nlist_notebooks, etc.", fillcolor="#DDA0DD"];
+            tools_dab [label="DAB Tools (4)\nanalyze_notebook,\ngenerate_bundle,\nvalidate_bundle", fillcolor="#DDA0DD"];
+            tools_workspace [label="Workspace Tools (3)\nupload_bundle,\nrun_bundle_command,\nsync_workspace", fillcolor="#DDA0DD"];
+        }
+    }
+
+    // ============ EXTERNAL DEPENDENCIES ============
+    subgraph cluster_external {
+        label="External Dependencies";
+        style="rounded,dashed";
+        bgcolor="#f0f0f0";
+
+        claude_sdk [label="Claude Agent SDK\nClaudeSDKClient", fillcolor="#D3D3D3"];
+        databricks_sdk [label="Databricks SDK\nWorkspaceClient", fillcolor="#D3D3D3"];
+        mcp_server [label="MCP Server\n(External/Internal)", fillcolor="#D3D3D3"];
+        databricks_cli [label="Databricks CLI\nbundle commands", fillcolor="#D3D3D3"];
+    }
+
+    // ============ CONNECTIONS ============
+
+    // Entry point connections
+    cli_main -> cmd_chat [label="routes"];
+    cli_main -> cmd_generate [label="routes"];
+    cli_main -> cmd_validate [label="routes"];
+    cli_main -> cmd_deploy [label="routes"];
+    cli_main -> cli_auth [label="uses"];
+
+    interactive_test -> agent [label="uses"];
+    sdk_entry -> agent [label="imports"];
+
+    // CLI internal connections
+    cmd_chat -> agent [label="creates"];
+    cmd_chat -> cli_output [label="uses"];
+    cmd_chat -> cli_auth [label="uses"];
+    cmd_chat -> cli_utils [label="uses"];
+
+    cmd_generate -> agent [label="creates"];
+    cmd_generate -> cli_output [label="uses"];
+    cmd_generate -> cli_auth [label="uses"];
+    cmd_generate -> cli_utils [label="uses"];
+
+    cmd_validate -> databricks_cli [label="subprocess"];
+    cmd_deploy -> databricks_cli [label="subprocess"];
+
+    cli_auth -> databricks_sdk [label="uses"];
+    cli_output -> claude_sdk [label="streams from"];
+
+    // Agent connections
+    agent -> claude_sdk [label="orchestrates"];
+    agent -> sdk_tools [label="custom mode"];
+    agent -> mcp_server [label="mcp mode"];
+
+    agent -> sa_orchestrator [label="delegates", style="dashed"];
+    agent -> sa_discovery [label="delegates", style="dashed"];
+    agent -> sa_analyzer [label="delegates", style="dashed"];
+    agent -> sa_generator [label="delegates", style="dashed"];
+    agent -> sa_validator [label="delegates", style="dashed"];
+    agent -> sa_deployer [label="delegates", style="dashed"];
+
+    // Subagent tool access
+    sa_discovery -> tools_core [label="uses", style="dotted"];
+    sa_analyzer -> tools_dab [label="uses", style="dotted"];
+    sa_generator -> tools_dab [label="uses", style="dotted"];
+    sa_validator -> tools_dab [label="uses", style="dotted"];
+    sa_deployer -> tools_workspace [label="uses", style="dotted"];
+
+    // Tool connections
+    sdk_tools -> tools_core [label="contains"];
+    sdk_tools -> tools_dab [label="contains"];
+    sdk_tools -> tools_workspace [label="contains"];
+
+    sdk_tools -> databricks_sdk [label="calls"];
+    sdk_tools -> databricks_cli [label="subprocess"];
+
+    // MCP server connection
+    mcp_server -> databricks_sdk [label="wraps"];
+}
