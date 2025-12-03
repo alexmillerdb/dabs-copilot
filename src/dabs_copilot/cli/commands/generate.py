@@ -108,27 +108,33 @@ async def generate(
     console.print(f"[dim]Output: {output_path}[/dim]")
     console.print()
 
-    # Build the prompt based on source type
+    # Build the prompt based on source type - guide agent through subagent workflow
     if source_type == "job":
-        prompt = (
-            f"Generate a Databricks Asset Bundle from job ID {source}. "
-            f"Name the bundle '{bundle_name}' and configure it for the '{target}' target. "
-            f"Analyze the job configuration to understand the tasks, clusters, and dependencies. "
-            f"Generate a complete databricks.yml with appropriate settings."
-        )
+        prompt = f"""Generate a Databricks Asset Bundle using subagents:
+
+1. Use dab-analyst to analyze job {source} - get job config and analyze all referenced notebooks
+2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
+3. Write the final databricks.yml to '{output_path}'
+
+Return the generated YAML content and validation status."""
+
     elif source_type == "workspace":
-        prompt = (
-            f"Generate a Databricks Asset Bundle from the workspace path '{source}'. "
-            f"Name the bundle '{bundle_name}' and configure it for the '{target}' target. "
-            f"List and analyze the notebooks in this path to understand the workflow. "
-            f"Generate a complete databricks.yml with appropriate job and task configurations."
-        )
+        prompt = f"""Generate a Databricks Asset Bundle using subagents:
+
+1. Use dab-analyst to analyze workspace path '{source}' - list and analyze all notebooks
+2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
+3. Write the final databricks.yml to '{output_path}'
+
+Return the generated YAML content and validation status."""
+
     else:  # local
-        prompt = (
-            f"Generate a Databricks Asset Bundle for the local path '{source}'. "
-            f"Name the bundle '{bundle_name}' and configure it for the '{target}' target. "
-            f"Generate a complete databricks.yml based on the files in this directory."
-        )
+        prompt = f"""Generate a Databricks Asset Bundle:
+
+1. Analyze local path '{source}' for notebooks and code files
+2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
+3. Write the final databricks.yml to '{output_path}'
+
+Return the generated YAML content and validation status."""
 
     # Add profile context if provided
     if profile:

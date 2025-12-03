@@ -39,13 +39,21 @@ def print_message(msg):
                 if isinstance(block, TextBlock):
                     print(f"Agent: {block.text}")
                 elif isinstance(block, ToolUseBlock):
-                    print(f"  → Tool: {block.name}")
-                    if hasattr(block, "input") and block.input:
-                        # Show abbreviated input for readability
-                        input_str = str(block.input)
-                        if len(input_str) > 100:
-                            input_str = input_str[:100] + "..."
-                        print(f"    Input: {input_str}")
+                    # Check if this is a subagent invocation (Task tool)
+                    if block.name == "Task":
+                        subagent = block.input.get("subagent_type", "unknown") if block.input else "unknown"
+                        description = block.input.get("description", "") if block.input else ""
+                        print(f"  Subagent: {subagent}")
+                        if description:
+                            print(f"    Task: {description}")
+                    else:
+                        print(f"  → Tool: {block.name}")
+                        if hasattr(block, "input") and block.input:
+                            # Show abbreviated input for readability
+                            input_str = str(block.input)
+                            if len(input_str) > 100:
+                                input_str = input_str[:100] + "..."
+                            print(f"    Input: {input_str}")
     elif isinstance(msg, ResultMessage):
         print("✓ Turn complete")
         if hasattr(msg, "total_cost_usd") and msg.total_cost_usd:
