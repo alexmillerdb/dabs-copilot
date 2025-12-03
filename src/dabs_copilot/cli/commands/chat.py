@@ -18,9 +18,9 @@ from ..utils import async_command, confirm_destructive_action, write_bundle_with
 
 # Import agent - handle both package and standalone imports
 try:
-    from ...agent import DABsAgent, get_custom_tool_names
+    from ...agent import DABsAgent, get_custom_tool_names, DABS_AGENTS
 except ImportError:
-    from dabs_copilot.agent import DABsAgent, get_custom_tool_names
+    from dabs_copilot.agent import DABsAgent, get_custom_tool_names, DABS_AGENTS
 
 
 @async_command
@@ -188,8 +188,18 @@ def _print_help(console: Console):
 
 
 def _print_tools(console: Console):
-    """Print available tools."""
+    """Print available tools and subagents."""
     try:
+        # Show subagents first (for complex tasks)
+        console.print("\n[bold]Available subagents (for complex tasks):[/bold]")
+        for name, agent_def in DABS_AGENTS.items():
+            # Truncate description if too long
+            desc = agent_def.description
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
+            console.print(f"  [cyan]{name}[/cyan]: {desc}")
+
+        # Then show direct tools (for simple tasks)
         tools = get_custom_tool_names()
         console.print(f"\n[bold]Available tools ({len(tools)}):[/bold]")
         for tool in sorted(tools):

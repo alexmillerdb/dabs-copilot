@@ -31,9 +31,17 @@ def print_message(msg):
                 if isinstance(block, TextBlock):
                     print(f"Agent: {block.text}")
                 elif isinstance(block, ToolUseBlock):
-                    print(f"  → Tool: {block.name}")
-                    if hasattr(block, "input"):
-                        print(f"    Input: {block.input}")
+                    # Check if this is a subagent invocation (Task tool)
+                    if block.name == "Task":
+                        subagent = block.input.get("subagent_type", "unknown") if block.input else "unknown"
+                        description = block.input.get("description", "") if block.input else ""
+                        print(f"  Subagent: {subagent}")
+                        if description:
+                            print(f"    Task: {description}")
+                    else:
+                        print(f"  → Tool: {block.name}")
+                        if hasattr(block, "input"):
+                            print(f"    Input: {block.input}")
     elif isinstance(msg, ResultMessage):
         print("✓ Result received")
         if hasattr(msg, "result") and msg.result:

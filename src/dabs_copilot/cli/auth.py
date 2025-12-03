@@ -85,11 +85,15 @@ def resolve_llm_config() -> dict:
     anthropic_auth = os.environ.get("ANTHROPIC_AUTH_TOKEN")
 
     if anthropic_base and anthropic_auth:
+        # DABS_MODEL takes precedence, then ANTHROPIC_MODEL, then default
+        model = os.environ.get("DABS_MODEL") or os.environ.get(
+            "ANTHROPIC_MODEL", "databricks-claude-sonnet-4-5"
+        )
         return {
             "backend": "databricks_fmapi",
             "api_base": anthropic_base,
             "api_key": anthropic_auth,
-            "model": os.environ.get("ANTHROPIC_MODEL", "databricks-claude-sonnet-4-5"),
+            "model": model,
         }
 
     # Check for LiteLLM proxy

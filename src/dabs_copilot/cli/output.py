@@ -81,9 +81,14 @@ class StreamingOutputHandler:
                                 if yaml_content:
                                     self.last_yaml_content = yaml_content
                             elif isinstance(block, ToolUseBlock):
-                                tool_name = self._clean_tool_name(block.name)
-                                tool_calls.append(tool_name)
-                                progress.update(task, description=f"Using {tool_name}...")
+                                if self._is_subagent_call(block):
+                                    subagent, description = self._get_subagent_info(block)
+                                    tool_calls.append(f"subagent:{subagent}")
+                                    progress.update(task, description=f"Subagent: {subagent}")
+                                else:
+                                    tool_name = self._clean_tool_name(block.name)
+                                    tool_calls.append(tool_name)
+                                    progress.update(task, description=f"Using {tool_name}...")
                                 self._print_tool_call(block)
 
                     elif isinstance(msg, ResultMessage):
@@ -124,12 +129,17 @@ class StreamingOutputHandler:
                                 live.start()
 
                             elif isinstance(block, ToolUseBlock):
-                                tool_name = self._clean_tool_name(block.name)
-                                tool_calls.append(tool_name)
-                                # Update status to show current tool
+                                # Update status to show current tool or subagent
                                 status_text = Text()
                                 status_text.append("⠋ ", style="bold blue")
-                                status_text.append(f"→ {tool_name}")
+                                if self._is_subagent_call(block):
+                                    subagent, description = self._get_subagent_info(block)
+                                    tool_calls.append(f"subagent:{subagent}")
+                                    status_text.append(f"Subagent: {subagent}", style="bold cyan")
+                                else:
+                                    tool_name = self._clean_tool_name(block.name)
+                                    tool_calls.append(tool_name)
+                                    status_text.append(f"→ {tool_name}")
                                 live.update(status_text)
 
                     elif isinstance(msg, ResultMessage):
@@ -151,6 +161,22 @@ class StreamingOutputHandler:
                 return tool_name.replace(prefix, "")
         return tool_name
 
+    def _is_subagent_call(self, block: ToolUseBlock) -> bool:
+        """Check if this tool call is a subagent invocation."""
+        return block.name == "Task"
+
+    def _get_subagent_info(self, block: ToolUseBlock) -> tuple[str, str]:
+        """Extract subagent type and description from Task tool call.
+
+        Returns:
+            (subagent_type, description)
+        """
+        if hasattr(block, "input") and block.input:
+            subagent = block.input.get("subagent_type", "unknown")
+            description = block.input.get("description", "")
+            return (subagent, description)
+        return ("unknown", "")
+
     def _extract_yaml(self, text: str) -> Optional[str]:
         """
         Extract databricks.yml content from text.
@@ -170,15 +196,21 @@ class StreamingOutputHandler:
 
     def _print_tool_call(self, block: ToolUseBlock):
         """Print tool call in verbose mode."""
-        tool_name = self._clean_tool_name(block.name)
-        self.console.print(f"  [dim]→ {tool_name}[/dim]")
+        if self._is_subagent_call(block):
+            subagent, description = self._get_subagent_info(block)
+            self.console.print(f"  [bold cyan]Subagent: {subagent}[/bold cyan]")
+            if description:
+                self.console.print(f"    [dim]Task: {description}[/dim]")
+        else:
+            tool_name = self._clean_tool_name(block.name)
+            self.console.print(f"  [dim]→ {tool_name}[/dim]")
 
-        if hasattr(block, "input") and block.input:
-            # Show abbreviated input
-            input_str = str(block.input)
-            if len(input_str) > 80:
-                input_str = input_str[:80] + "..."
-            self.console.print(f"    [dim]{input_str}[/dim]")
+            if hasattr(block, "input") and block.input:
+                # Show abbreviated input
+                input_str = str(block.input)
+                if len(input_str) > 80:
+                    input_str = input_str[:80] + "..."
+                self.console.print(f"    [dim]{input_str}[/dim]")
 
     def _print_result(self, msg: ResultMessage):
         """Print result message in verbose mode."""
