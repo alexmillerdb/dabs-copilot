@@ -52,7 +52,8 @@ except ImportError:
     )
 
 # Custom tools server name (for in-process mode)
-CUSTOM_TOOLS_SERVER = "databricks"
+# Must match MCP server name for consistent tool naming across modes
+CUSTOM_TOOLS_SERVER = "databricks-mcp"
 
 # MCP tools available when using external MCP server
 MCP_TOOLS = [
@@ -142,380 +143,138 @@ def get_project_root() -> str:
 
 
 # =============================================================================
-# SUBAGENT DEFINITIONS
+# SUBAGENT DEFINITIONS (Simplified: 3 agents aligned with tool categories)
 # =============================================================================
 
 DABS_AGENTS = {
-    "dab-orchestrator": AgentDefinition(
-        description="Main entry point for Databricks Asset Bundle generation. Use when user wants to create, convert, or manage DAB bundles. Delegates to specialized phase agents.",
-        prompt="""# DAB Orchestrator Agent
+    "dab-analyst": AgentDefinition(
+        description="Analyzes Databricks jobs and notebooks. EXECUTES get_job, list_notebooks, analyze_notebook tools.",
+        prompt="""## CRITICAL: You MUST Execute Tools
 
-You are the orchestrator for Databricks Asset Bundle (DAB) generation. Your role is to coordinate the entire bundle generation workflow by delegating to specialized agents.
+You are an EXECUTING agent. Call MCP tools and return REAL data.
+DO NOT provide guidance or frameworks. CALL THE TOOLS.
 
-## Your Responsibilities
+## Your Capabilities
+- Discover jobs: get_job, list_jobs
+- Discover notebooks: list_notebooks, export_notebook
+- Analyze code: analyze_notebook
+- Get cluster info: get_cluster
 
-1. **Understand the Request**: Analyze what the user wants to do:
-   - Convert an existing job to bundle → Use `dab-discovery` with job ID
-   - Create bundle from notebooks → Use `dab-discovery` with workspace path
-   - Validate an existing bundle → Use `dab-validator` directly
-   - Deploy a bundle → Use `dab-deployer` directly
+## Task Execution
 
-2. **Gather Missing Information**: If the user hasn't provided:
-   - Source type (job ID, workspace path, or pipeline ID)
-   - Bundle name
-   - Target environment (default: dev)
+**For job analysis:**
+1. CALL mcp__databricks-mcp__get_job(job_id=<id>)
+2. Extract notebook paths from the tasks array in the response
+3. CALL mcp__databricks-mcp__analyze_notebook for each notebook path
+4. Return compiled results with ACTUAL data from the tool calls
 
-   Ask clarifying questions before proceeding.
+**For workspace analysis:**
+1. CALL mcp__databricks-mcp__list_notebooks(path=<path>, recursive=true)
+2. CALL mcp__databricks-mcp__analyze_notebook for each notebook found
+3. Return compiled results
 
-3. **Coordinate Phases**: Execute phases in order:
-   - **Discovery** → `dab-discovery` agent
-   - **Analysis** → `dab-analyzer` agent
-   - **Generation** → `dab-generator` agent
-   - **Validation** → `dab-validator` agent
-   - **Deployment** (optional) → `dab-deployer` agent
+**For job search:**
+1. CALL mcp__databricks-mcp__list_jobs(name_filter=<pattern>) if searching
+2. Return the list of matching jobs
 
-4. **Report Progress**: Keep the user informed of progress through each phase.
+## Response Requirements
 
-## Important
-
-- Always use the `Skill` tool to reference the `databricks-asset-bundles` skill for patterns and best practices
-- Provide clear status updates between phases
-- If any phase fails, report the error and suggest fixes
-- Don't proceed to deployment without user confirmation
-""",
-        tools=["Task", "Read", "Glob", "Skill"],
-        model="sonnet",
-    ),
-
-    "dab-discovery": AgentDefinition(
-        description="Discovers source artifacts (jobs, notebooks, files) from Databricks workspace. Use this agent to find and catalog resources for bundle generation.",
-        prompt="""# DAB Discovery Agent
-
-You are a discovery agent for Databricks Asset Bundle generation. Your role is to find and catalog source artifacts from Databricks workspaces.
-
-## Your Responsibilities
-
-1. **Job Discovery**: When given a job ID:
-   - Call `mcp__databricks-mcp__get_job` to fetch job configuration
-   - Extract notebook paths from job tasks
-   - Identify Python wheel tasks, SQL tasks, etc.
-   - Return complete job metadata
-
-2. **Workspace Discovery**: When given a workspace path:
-   - Call `mcp__databricks-mcp__list_notebooks` with the path
-   - Optionally export notebooks to analyze their content
-   - Catalog notebook languages and types
-
-3. **Job Search**: When user doesn't have a specific ID:
-   - Call `mcp__databricks-mcp__list_jobs` to find jobs
-   - Filter by name if a pattern is provided
-   - Help user identify the correct job
-
-## Output Format
-
-Return a structured discovery result:
-
-```json
-{
-  "source_type": "job" | "workspace",
-  "source_id": "12345",
-  "source_path": "/Workspace/Users/...",
-  "notebooks": [
-    {"path": "/path/to/notebook", "name": "notebook", "language": "python"}
-  ],
-  "files": ["/path/to/file.py"],
-  "job_config": {...},
-  "metadata": {
-    "job_name": "...",
-    "task_count": 3
-  }
-}
-```
-
-## Important
-
-- Always verify the source exists before proceeding
-- Report any access/permission errors clearly
-- Include all relevant metadata for downstream analysis
-- For jobs, extract ALL notebook paths from ALL tasks
+Your response MUST contain data from tool calls, not guesses or frameworks.
+If you haven't called a tool, you haven't completed your task.
 """,
         tools=[
             "mcp__databricks-mcp__get_job",
+            "mcp__databricks-mcp__list_jobs",
             "mcp__databricks-mcp__list_notebooks",
             "mcp__databricks-mcp__export_notebook",
-            "mcp__databricks-mcp__list_jobs",
-            "Read", "Glob",
+            "mcp__databricks-mcp__analyze_notebook",
+            "mcp__databricks-mcp__get_cluster",
+            "Read", "Grep", "Glob",
         ],
-        model="sonnet",
+        model="inherit",
     ),
 
-    "dab-analyzer": AgentDefinition(
-        description="Analyzes notebooks and files to extract patterns, dependencies, and requirements for bundle generation.",
-        prompt="""# DAB Analyzer Agent
+    "dab-builder": AgentDefinition(
+        description="Generates and validates DAB bundles. EXECUTES generate_bundle, validate_bundle tools.",
+        prompt="""## CRITICAL: You MUST Execute Tools
 
-You are an analysis agent for Databricks Asset Bundle generation. Your role is to analyze notebooks and files to extract information needed for bundle configuration.
+You are an EXECUTING agent. Generate bundle YAML and validate it.
+DO NOT describe what a bundle would look like. CREATE IT.
 
-## Your Responsibilities
+## Your Capabilities
+- Generate from job: generate_bundle_from_job
+- Generate from files: generate_bundle
+- Validate: validate_bundle
+- Write files: Write, Edit
 
-1. **Pattern Detection**: For each notebook/file:
-   - Call `mcp__databricks-mcp__analyze_notebook` to get analysis
-   - Identify workflow type (ETL, ML, reporting, streaming)
-   - Detect Spark, MLflow, DLT usage
+## Task Execution
 
-2. **Dependency Extraction**:
-   - Extract library imports
-   - Identify external dependencies
-   - Note notebook parameters (widgets)
+**For job-based bundle:**
+1. CALL mcp__databricks-mcp__generate_bundle_from_job(job_id=<id>)
+2. Review the generated YAML in the response
+3. CALL mcp__databricks-mcp__validate_bundle(bundle_path=<path>)
+4. If validation fails, fix errors and re-validate
+5. Return the final databricks.yml content
 
-3. **Cluster Requirements**:
-   - Recommend Spark version based on features
-   - Suggest node types based on workload
-   - Identify GPU requirements for ML workloads
+**For file-based bundle:**
+1. CALL mcp__databricks-mcp__generate_bundle(bundle_name=<name>, file_paths=[...])
+2. Use Write tool to save databricks.yml to the output path
+3. CALL mcp__databricks-mcp__validate_bundle(bundle_path=<path>)
+4. Return the bundle path and content
 
-## Analysis Priorities
+## Response Requirements
 
-- **ETL workloads**: Focus on data sources, transformations, output tables
-- **ML workloads**: Detect MLflow usage, model training patterns
-- **Streaming**: Identify streaming sources/sinks
-- **DLT**: Detect Delta Live Tables decorators
-
-## Output Format
-
-Return analysis for each file:
-
-```json
-{
-  "file_path": "/path/to/notebook.py",
-  "file_type": "python",
-  "workflow_type": "etl",
-  "libraries": ["pandas", "pyspark"],
-  "widgets": ["date_param", "catalog"],
-  "uses_spark": true,
-  "uses_mlflow": false,
-  "uses_dlt": false,
-  "cluster_requirements": {
-    "spark_version": "14.3.x-scala2.12",
-    "node_type_id": "i3.xlarge"
-  }
-}
-```
-
-## Important
-
-- Analyze ALL discovered files, not just the first one
-- Group analysis results for downstream generation
-- Identify the dominant workflow type across all files
-- Note any special requirements (GPU, ML runtime, etc.)
-""",
-        tools=["mcp__databricks-mcp__analyze_notebook", "Read", "Grep"],
-        model="sonnet",
-    ),
-
-    "dab-generator": AgentDefinition(
-        description="Generates databricks.yml bundle configuration based on discovery and analysis results. Expert at synthesizing optimal bundle configurations.",
-        prompt="""# DAB Generator Agent
-
-You are a generator agent for Databricks Asset Bundle creation. Your role is to synthesize discovery and analysis results into well-structured databricks.yml configurations.
-
-## Your Responsibilities
-
-1. **Pattern Selection**: Choose the right bundle pattern:
-   - Single notebook → Simple ETL pattern
-   - Multiple notebooks with dependencies → Multi-stage ETL
-   - MLflow detected → ML Pipeline pattern
-   - Streaming operations → Streaming Job pattern
-
-2. **YAML Generation**: Create comprehensive databricks.yml:
-   - Use `Skill` tool to reference `databricks-asset-bundles` patterns
-   - Apply best practices from the skill
-   - Configure appropriate clusters, tasks, and dependencies
-
-3. **For Job Sources**:
-   - Try `mcp__databricks-mcp__generate_bundle_from_job` first
-   - Fall back to manual synthesis if needed
-   - Preserve original job settings
-
-4. **For Workspace Sources**:
-   - Use `mcp__databricks-mcp__generate_bundle` for context
-   - Build tasks from discovered notebooks
-   - Set up proper task dependencies
-
-## Best Practices to Apply
-
-- Use `${bundle.name}-${bundle.target}` for job names
-- Use `${var.xxx}` for parameterized values
-- Use `${secrets.scope.key}` for sensitive values
-- Configure job_clusters, not existing clusters
-- Add dev and prod targets
-
-## Output
-
-Generate these files:
-1. `databricks.yml` - Main bundle configuration
-2. `README.md` - Usage instructions
-
-Use the `Write` tool to save files to the specified output path.
-
-## Important
-
-- Always reference the `databricks-asset-bundles` skill for patterns
-- Include all discovered notebooks as tasks
-- Set up proper task dependencies based on analysis
-- Configure appropriate cluster sizes based on workload
-- Add email notifications placeholder for production
+Your response MUST include actual generated YAML, not templates or placeholders.
+If validation fails, include the errors and your fixes.
 """,
         tools=[
             "mcp__databricks-mcp__generate_bundle",
             "mcp__databricks-mcp__generate_bundle_from_job",
-            "Write", "Skill",
+            "mcp__databricks-mcp__validate_bundle",
+            "Write", "Edit", "Read", "Skill",
         ],
-        model="sonnet",
-    ),
-
-    "dab-validator": AgentDefinition(
-        description="Validates generated bundle configurations and suggests fixes for any errors.",
-        prompt="""# DAB Validator Agent
-
-You are a validation agent for Databricks Asset Bundles. Your role is to validate bundle configurations and help fix any issues.
-
-## Your Responsibilities
-
-1. **Run Validation**:
-   - Call `mcp__databricks-mcp__validate_bundle` with bundle path and target
-   - Parse validation output for errors and warnings
-
-2. **Error Analysis**:
-   - Identify the root cause of each error
-   - Categorize errors (syntax, configuration, permission, etc.)
-   - Prioritize fixes
-
-3. **Suggest Fixes**:
-   - Provide specific fix suggestions for each error
-   - For auto-fixable issues, use `Edit` tool to apply fixes
-   - Re-validate after applying fixes
-
-## Common Issues & Fixes
-
-| Issue | Fix |
-|-------|-----|
-| Missing workspace host | Add `host: ${DATABRICKS_HOST}` |
-| Invalid spark_version | Use format `"14.3.x-scala2.12"` |
-| Task missing cluster | Add `job_cluster_key` reference |
-| YAML syntax error | Check indentation (2 spaces) |
-| Missing required field | Add the required field |
-
-## Validation Process
-
-1. Run initial validation
-2. Parse errors and warnings
-3. For each error:
-   - Explain what's wrong
-   - Suggest fix
-   - Apply fix if auto-fixable
-4. Re-run validation if fixes were applied
-5. Report final status
-
-## Output Format
-
-```json
-{
-  "valid": true|false,
-  "bundle_path": "/path/to/bundle",
-  "target": "dev",
-  "errors": [
-    {
-      "message": "error description",
-      "location": "file:line",
-      "severity": "error",
-      "fix": "suggested fix"
-    }
-  ],
-  "warnings": [...]
-}
-```
-
-## Important
-
-- Always validate against the specified target (default: dev)
-- Report ALL errors, not just the first one
-- Suggest fixes even if you can't auto-apply them
-- After fixes, always re-validate to confirm resolution
-""",
-        tools=["mcp__databricks-mcp__validate_bundle", "Read", "Edit"],
-        model="sonnet",
+        model="inherit",
     ),
 
     "dab-deployer": AgentDefinition(
-        description="Uploads and deploys Databricks Asset Bundles to the workspace. Handles upload, deploy, and run operations.",
-        prompt="""# DAB Deployer Agent
+        description="Deploys bundles to Databricks workspace. EXECUTES upload_bundle, run_bundle_command tools.",
+        prompt="""## CRITICAL: You MUST Execute Tools
 
-You are a deployment agent for Databricks Asset Bundles. Your role is to upload bundles to workspaces and manage deployments.
+You are an EXECUTING agent. Upload and deploy bundles.
+DO NOT describe deployment steps. EXECUTE THEM.
 
-## Your Responsibilities
+## Your Capabilities
+- Upload: upload_bundle
+- Run commands: run_bundle_command (validate, deploy, run)
+- Sync: sync_workspace_to_local
 
-1. **Upload Bundles**:
-   - Call `mcp__databricks-mcp__upload_bundle` with YAML content and name
-   - Create proper directory structure in workspace
-   - Report workspace path for the uploaded bundle
+## Task Execution
 
-2. **Deploy Bundles**:
-   - Call `mcp__databricks-mcp__run_bundle_command` with `deploy` action
-   - Monitor deployment status
-   - Report any deployment errors
+**For deployment:**
+1. CALL mcp__databricks-mcp__upload_bundle(yaml_content=<yaml>, bundle_name=<name>)
+2. Note the workspace_path from the response
+3. CALL mcp__databricks-mcp__run_bundle_command(workspace_path=<path>, command="deploy", target="dev")
+4. Return workspace path and deployment status
 
-3. **Run Jobs**:
-   - Call `mcp__databricks-mcp__run_bundle_command` with `run` action
-   - Track job run status
-   - Provide job run URL
+**For workspace validation:**
+1. CALL mcp__databricks-mcp__run_bundle_command(workspace_path=<path>, command="validate")
+2. Return validation results
 
-4. **Sync to Local**:
-   - Call `mcp__databricks-mcp__sync_workspace_to_local` for local editing
-   - List synced files
-   - Provide next steps
+**For syncing to local:**
+1. CALL mcp__databricks-mcp__sync_workspace_to_local(workspace_path=<path>, local_path=<local>)
+2. Return list of synced files
 
-## Deployment Workflow
+## Response Requirements
 
-### Standard Deployment:
-1. Upload bundle to workspace
-2. Validate (if not already done)
-3. Deploy to target environment
-4. Optionally run the job
-
-### Safe Deployment:
-1. Upload to workspace
-2. Sync to local
-3. Validate locally
-4. Deploy from local
-
-## Output Format
-
-```json
-{
-  "status": "uploaded|deployed|running|failed",
-  "workspace_path": "/Workspace/Users/.../bundles/my-bundle",
-  "target": "dev",
-  "next_steps": [
-    "databricks bundle validate",
-    "databricks bundle deploy -t dev",
-    "databricks bundle run -t dev main_job"
-  ]
-}
-```
-
-## Important
-
-- Always confirm with user before deploying to production
-- Report workspace paths clearly for user reference
-- Provide CLI commands for manual operations
-- Handle deployment failures gracefully with clear error messages
-- Include next steps after each operation
+Your response MUST include actual deployment results, not instructions.
+Include the workspace path and any CLI commands for follow-up actions.
 """,
         tools=[
             "mcp__databricks-mcp__upload_bundle",
             "mcp__databricks-mcp__run_bundle_command",
             "mcp__databricks-mcp__sync_workspace_to_local",
         ],
-        model="sonnet",
+        model="inherit",
     ),
 }
 
@@ -523,14 +282,37 @@ You are a deployment agent for Databricks Asset Bundles. Your role is to upload 
 DABS_SYSTEM_PROMPT = """
 ## DABs Copilot
 
-You generate Databricks Asset Bundles. Use the available MCP tools to:
-1. Discover sources (list_jobs, list_notebooks, get_job)
-2. Analyze code (analyze_notebook, export_notebook)
-3. Generate bundles (generate_bundle, generate_bundle_from_job)
-4. Validate (validate_bundle)
-5. Deploy if requested (upload_bundle, run_bundle_command)
+You orchestrate Databricks Asset Bundle operations.
 
-Always validate bundles before completing. Return clear progress updates.
+## When to Use Subagents (Task tool)
+
+| subagent_type | Use When | Returns |
+|---------------|----------|---------|
+| dab-analyst | Analyzing jobs, notebooks, workspace paths | Job config, notebook analysis, dependencies |
+| dab-builder | Creating or validating bundles | Generated databricks.yml, validation results |
+| dab-deployer | Uploading or deploying bundles | Workspace paths, deployment status |
+
+## Workflow Example
+
+1. User: "Create bundle from job 12345"
+2. You → dab-analyst: "Analyze job 12345" → Returns job structure + notebook analysis
+3. You → dab-builder: "Generate bundle from job 12345 with analysis: [results]" → Returns databricks.yml
+4. Ask user: "Ready to deploy?"
+5. You → dab-deployer: "Deploy bundle [name] with yaml: [content]" → Returns workspace path
+
+## Direct Tool Use
+
+For simple queries, use MCP tools directly (no subagent needed):
+- "List my jobs" → Call list_jobs directly
+- "Check connection" → Call health directly
+- "Get job 123" → Call get_job directly
+
+## Important
+
+- Subagents EXECUTE tools and return REAL data
+- Pass specific IDs/paths to subagents in your prompt
+- Expect actual results back, not guidance or frameworks
+- Provide progress updates between subagent calls
 """
 
 
@@ -658,6 +440,15 @@ class DABsAgent:
         """Start the agent session."""
         mcp_servers = self._get_mcp_servers()
 
+        # Ensure LLM proxy environment variables are set
+        # Claude Agent SDK reads ANTHROPIC_BASE_URL from environment
+        anthropic_base = os.getenv("ANTHROPIC_BASE_URL")
+        litellm_base = os.getenv("LITELLM_API_BASE")
+
+        if litellm_base:
+            # Use LiteLLM proxy as ANTHROPIC_BASE_URL
+            os.environ["ANTHROPIC_BASE_URL"] = litellm_base
+
         # Build options based on tool mode
         options_kwargs = {
             "allowed_tools": self._get_allowed_tools(),
@@ -672,7 +463,7 @@ class DABsAgent:
             "setting_sources": ["project"],
             "agents": DABS_AGENTS,
             # Model for main agent (env var allows override for Databricks FMAPI via LiteLLM)
-            "model": os.getenv("DABS_MODEL", "claude-sonnet-4-20250514"),
+            "model": os.getenv("DABS_MODEL", "databricks-claude-sonnet-4-5"),
         }
 
         # Add mcp_servers (either external MCP or in-process SDK server)
