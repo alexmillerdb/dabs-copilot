@@ -55,16 +55,13 @@ digraph DABsCopilot {
         agent [label="agent.py\nDABsAgent", fillcolor="#4169E1", fontcolor="white"];
 
         subgraph cluster_subagents {
-            label="Subagent Definitions";
+            label="Subagent Definitions (3)";
             style="rounded,dashed";
             bgcolor="#b0e0e6";
 
-            sa_orchestrator [label="dab-orchestrator\nCoordinates workflow", fillcolor="#00CED1"];
-            sa_discovery [label="dab-discovery\nFinds resources", fillcolor="#00CED1"];
-            sa_analyzer [label="dab-analyzer\nAnalyzes code", fillcolor="#00CED1"];
-            sa_generator [label="dab-generator\nCreates YAML", fillcolor="#00CED1"];
-            sa_validator [label="dab-validator\nValidates configs", fillcolor="#00CED1"];
-            sa_deployer [label="dab-deployer\nDeploys bundles", fillcolor="#00CED1"];
+            sa_analyst [label="dab-analyst\nDiscovers & analyzes\njobs/notebooks", fillcolor="#00CED1"];
+            sa_builder [label="dab-builder\nGenerates & validates\nbundle YAML", fillcolor="#00CED1"];
+            sa_deployer [label="dab-deployer\nUploads & deploys\nbundles", fillcolor="#00CED1"];
         }
     }
 
@@ -74,7 +71,7 @@ digraph DABsCopilot {
         style="rounded";
         bgcolor="#f5e6ff";
 
-        sdk_tools [label="tools/sdk_tools.py\n27 Custom Tools", fillcolor="#9370DB", fontcolor="white"];
+        sdk_tools [label="tools/sdk_tools.py\n17 Custom Tools", fillcolor="#9370DB", fontcolor="white"];
 
         subgraph cluster_tool_categories {
             label="Tool Categories";
@@ -133,18 +130,14 @@ digraph DABsCopilot {
     agent -> sdk_tools [label="custom mode"];
     agent -> mcp_server [label="mcp mode"];
 
-    agent -> sa_orchestrator [label="delegates", style="dashed"];
-    agent -> sa_discovery [label="delegates", style="dashed"];
-    agent -> sa_analyzer [label="delegates", style="dashed"];
-    agent -> sa_generator [label="delegates", style="dashed"];
-    agent -> sa_validator [label="delegates", style="dashed"];
+    agent -> sa_analyst [label="delegates", style="dashed"];
+    agent -> sa_builder [label="delegates", style="dashed"];
     agent -> sa_deployer [label="delegates", style="dashed"];
 
     // Subagent tool access
-    sa_discovery -> tools_core [label="uses", style="dotted"];
-    sa_analyzer -> tools_dab [label="uses", style="dotted"];
-    sa_generator -> tools_dab [label="uses", style="dotted"];
-    sa_validator -> tools_dab [label="uses", style="dotted"];
+    sa_analyst -> tools_core [label="uses", style="dotted"];
+    sa_analyst -> tools_dab [label="analyze_notebook", style="dotted"];
+    sa_builder -> tools_dab [label="uses", style="dotted"];
     sa_deployer -> tools_workspace [label="uses", style="dotted"];
 
     // Tool connections

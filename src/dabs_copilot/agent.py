@@ -95,8 +95,12 @@ ALLOWED_TOOLS = BASE_TOOLS + MCP_TOOLS
 
 load_dotenv()
 
-os.environ['DATABRICKS_HOST'] = os.getenv("DATABRICKS_HOST")
-os.environ['DATABRICKS_CONFIG_PROFILE'] = os.getenv("DATABRICKS_CONFIG_PROFILE")
+# Set env vars only if they exist (avoid TypeError from None assignment)
+if _host := os.getenv("DATABRICKS_HOST"):
+    os.environ['DATABRICKS_HOST'] = _host
+if _profile := os.getenv("DATABRICKS_CONFIG_PROFILE"):
+    os.environ['DATABRICKS_CONFIG_PROFILE'] = _profile
+
 mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "databricks"))
 mlflow.set_experiment(experiment_id=os.getenv("MLFLOW_EXPERIMENT_ID", "567797472279756"))
 mlflow.anthropic.autolog()
@@ -440,13 +444,9 @@ class DABsAgent:
         """Start the agent session."""
         mcp_servers = self._get_mcp_servers()
 
-        # Ensure LLM proxy environment variables are set
+        # Use LiteLLM proxy as ANTHROPIC_BASE_URL if configured
         # Claude Agent SDK reads ANTHROPIC_BASE_URL from environment
-        anthropic_base = os.getenv("ANTHROPIC_BASE_URL")
-        litellm_base = os.getenv("LITELLM_API_BASE")
-
-        if litellm_base:
-            # Use LiteLLM proxy as ANTHROPIC_BASE_URL
+        if litellm_base := os.getenv("LITELLM_API_BASE"):
             os.environ["ANTHROPIC_BASE_URL"] = litellm_base
 
         # Build options based on tool mode
@@ -483,7 +483,7 @@ class DABsAgent:
             self._client = None
 
     async def _check_tool_permission(
-        self, tool_name: str, tool_input: dict, context: ToolPermissionContext
+        self, tool_name: str, tool_input: dict, _context: ToolPermissionContext
     ) -> PermissionResultAllow | PermissionResultDeny:
         """Permission callback - pause for confirmation on destructive actions."""
         destructive = self._get_destructive_tools()

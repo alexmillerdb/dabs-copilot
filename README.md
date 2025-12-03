@@ -56,12 +56,13 @@ dabs-copilot chat
 │                  │                                           │
 │    ┌─────────────┼─────────────┐                            │
 │    ▼             ▼             ▼                            │
-│ ┌──────┐   ┌──────────┐   ┌──────────┐                      │
-│ │Disco-│   │ Analyzer │   │Generator │  ... 6 subagents    │
-│ │ very │   │          │   │          │                      │
-│ └──────┘   └──────────┘   └──────────┘                      │
-│                  │                                           │
-│                  ▼                                           │
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐                      │
+│ │  Analyst │ │  Builder │ │ Deployer │   3 subagents        │
+│ │ discover │ │ generate │ │  upload  │                      │
+│ │ analyze  │ │ validate │ │  deploy  │                      │
+│ └────┬─────┘ └────┬─────┘ └────┬─────┘                      │
+│      └────────────┼────────────┘                            │
+│                   ▼                                          │
 │         ┌─────────────────┐                                 │
 │         │  17 Databricks  │                                 │
 │         │     Tools       │                                 │
@@ -71,12 +72,20 @@ dabs-copilot chat
 └──────────────────────────────────────────────────────────────┘
 ```
 
+> See [docs/architecture.dot](docs/architecture.dot) for detailed Graphviz diagram.
+
 ### Components
 
 - **CLI** (`dabs-copilot`): Typer-based commands for generate, validate, deploy, chat
-- **DABsAgent**: Claude Agent SDK orchestrator with 6 specialized subagents
-- **Tools**: 17 Databricks operations (jobs, notebooks, clusters, bundles)
-- **Subagents**: Discovery → Analysis → Generation → Validation → Deployment
+- **DABsAgent**: Claude Agent SDK orchestrator with 3 specialized subagents
+- **Tools**: 17 Databricks operations across 3 categories:
+  - Core (10): health, jobs, notebooks, SQL, DBFS, clusters
+  - DAB (4): analyze, generate, validate bundles
+  - Workspace (3): upload, sync, run bundle commands
+- **Subagents**:
+  - `dab-analyst`: Discovers jobs/notebooks, analyzes code patterns
+  - `dab-builder`: Generates and validates bundle YAML
+  - `dab-deployer`: Uploads and deploys bundles to workspace
 
 ## Commands
 
@@ -147,26 +156,39 @@ export DATABRICKS_TOKEN=dapi...
 
 ### LLM Backend
 
-```bash
-# Option 1: Anthropic direct
-export ANTHROPIC_API_KEY=sk-ant-...
+Three options for connecting to Claude:
 
-# Option 2: LiteLLM proxy (for Databricks FMAPI)
-export LITELLM_API_BASE=http://localhost:4000
+#### Option 1: Anthropic Direct (simplest)
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export DABS_MODEL=claude-opus-4-5
 ```
 
-#### Using Databricks Foundation Model API via LiteLLM
+#### Option 2: Databricks FM API (no Anthropic key needed)
 
-To use Claude models hosted on Databricks instead of Anthropic directly:
+Use Claude models hosted on your Databricks workspace:
+
+```bash
+export ANTHROPIC_BASE_URL=https://your-workspace.cloud.databricks.com/serving-endpoints/anthropic
+export ANTHROPIC_AUTH_TOKEN=dapi...
+export ANTHROPIC_API_KEY=""  # Must be set but empty
+export DABS_MODEL=databricks-claude-opus-4-5
+```
+
+#### Option 3: LiteLLM Proxy (advanced routing)
+
+For custom model routing or when you need request/response logging:
 
 1. Configure environment variables in `.env`:
 ```bash
 DATABRICKS_API_BASE=https://your-workspace.cloud.databricks.com/serving-endpoints
 DATABRICKS_API_KEY=dapi...
 LITELLM_API_BASE=http://localhost:4000
+DABS_MODEL=claude-sonnet-4-5
 ```
 
-2. Configure `litellm_config.yaml` to route model requests to Databricks:
+2. Configure `litellm_config.yaml`:
 ```yaml
 model_list:
   - model_name: claude-sonnet-4-20250514
