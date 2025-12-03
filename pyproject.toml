@@ -1,6 +1,6 @@
 [project]
 name = "dabs-copilot"
-version = "1.3.0"
+version = "1.4.0"
 description = "Conversational AI for Databricks Asset Bundles"
 readme = "README.md"
 license = {text = "Apache-2.0"}

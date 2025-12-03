@@ -1,6 +1,6 @@
 """DABs Copilot CLI - Conversational AI for Databricks Asset Bundles."""
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 
 from .main import app
 
