@@ -75,6 +75,38 @@ After analyzing notebooks/code, classify the workload type:
 Include the detected workload type in your response - this guides bundle pattern selection.
 Use `Skill: databricks-asset-bundles` to load patterns relevant to your analysis.
 
+## Hybrid Analysis Mode
+
+When analyzing notebooks, use a two-phase approach:
+
+### Phase 1: Deterministic Analysis (Always)
+Call `mcp__databricks-mcp__analyze_notebook(notebook_path)` to get:
+- Dependencies (standard_library, third_party, databricks, local)
+- Data sources (input_tables, output_tables, file_paths)
+- Databricks features (widgets, notebook_calls, cluster_configs)
+- Workflow type and detection confidence
+- **complexity_score** (0-1) and complexity_factors
+
+### Phase 2: Semantic Analysis (Conditional)
+Review the `complexity_score` from Phase 1:
+
+**LOW complexity (< 0.5)**: Deterministic analysis is sufficient. Report findings directly.
+
+**HIGH complexity (≥ 0.5)**: Provide additional semantic analysis:
+1. Export/read the notebook content using `mcp__databricks-mcp__export_notebook`
+2. Analyze and report:
+   - **Primary Intent**: What is this code trying to accomplish?
+   - **Architecture Pattern**: Medallion? Star schema? Lambda? Custom?
+   - **Data Flow**: Source → transformations → destination
+   - **Quality Concerns**: Anti-patterns, hardcoded values, missing error handling
+3. Enhanced recommendations: cluster config, scheduling, parameters
+
+### Output Format
+Return unified analysis combining:
+- Deterministic facts (from tool)
+- Semantic insights (your analysis, when complexity is high)
+- Recommendations for bundle generation
+
 {_RESPONSE_REQUIREMENTS}
 """
 

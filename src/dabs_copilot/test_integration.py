@@ -9,6 +9,9 @@ Tests include:
 - Skills loading (databricks-asset-bundles)
 - Subagent invocation (analyst, builder, deployer)
 - Data listing (jobs, apps, pipelines via SQL)
+- Enhanced notebook analysis (complexity_score, dependencies, data_sources)
+- Analysis caching behavior
+- Hybrid analysis workflow (deterministic + semantic)
 """
 import asyncio
 import os
@@ -316,6 +319,106 @@ async def test_interactive():
         raise
 
 
+async def test_enhanced_analysis():
+    """Test enhanced notebook analysis with new fields (complexity_score, dependencies, etc.)."""
+    print("\n" + "=" * 60)
+    print("TEST 10: Enhanced Notebook Analysis")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = """Use the analyze_notebook tool to analyze a notebook from the workspace.
+First, list notebooks in /Workspace/Users/ (limit to first few) and pick one Python notebook.
+Then call analyze_notebook on it.
+
+Report these fields from the analysis result:
+- path and file_type
+- workflow_type and detection_confidence
+- complexity_score and complexity_factors
+- dependencies (show categories: standard_library, third_party, databricks)
+- data_sources (input_tables, output_tables if any)
+- databricks_features (widgets, notebook_calls)
+- cached status"""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ Enhanced analysis test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_analysis_caching():
+    """Test analysis caching behavior with skip_cache parameter."""
+    print("\n" + "=" * 60)
+    print("TEST 11: Analysis Caching")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = """Test the analysis caching feature:
+
+1. First, list notebooks in /Workspace/Users/ and pick one notebook path.
+2. Call analyze_notebook on that path (first call - should have cached: false).
+3. Call analyze_notebook on the SAME path again (second call - should have cached: true).
+
+Report for each call:
+- The notebook path used
+- The 'cached' field value (true/false)
+- The 'cache_key' field
+
+Confirm whether caching is working (second call should show cached: true)."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ Analysis caching test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_hybrid_analysis_workflow():
+    """Test hybrid analysis workflow via analyst subagent."""
+    print("\n" + "=" * 60)
+    print(f"TEST 12: Hybrid Analysis Workflow ({SUBAGENT_ANALYST})")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = f"""Use the Task tool to spawn the '{SUBAGENT_ANALYST}' subagent with this task:
+"Perform a hybrid analysis on a notebook from /Workspace/Users/:
+1. Use analyze_notebook to get deterministic analysis including complexity_score
+2. Report the complexity_score value
+3. If complexity_score >= 0.5, provide semantic insights about:
+   - Primary intent of the notebook
+   - Data flow pattern
+   - Any quality concerns
+4. If complexity_score < 0.5, explain that deterministic analysis is sufficient
+
+List the notebook path analyzed and the analysis approach taken."
+
+Return the subagent's complete analysis report."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ Hybrid analysis workflow test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
 async def run_quick_tests():
     """Run quick tests only (health, jobs, apps)."""
     await test_health_check()
@@ -342,6 +445,13 @@ async def run_subagent_tests():
     await test_subagent_deployer()
 
 
+async def run_analysis_tests():
+    """Run analysis-related tests (enhanced analysis, caching, hybrid workflow)."""
+    await test_enhanced_analysis()
+    await test_analysis_caching()
+    await test_hybrid_analysis_workflow()
+
+
 async def run_all_tests():
     """Run all integration tests."""
     await test_health_check()
@@ -353,6 +463,9 @@ async def run_all_tests():
     await test_subagent_builder()
     await test_subagent_deployer()
     await test_interactive()
+    await test_enhanced_analysis()
+    await test_analysis_caching()
+    await test_hybrid_analysis_workflow()
 
 
 async def main():
@@ -383,11 +496,12 @@ async def main():
 
     print(f"\nTest suite: {test_suite}")
     print("\nAvailable test suites:")
-    print("  all       - Run all 9 tests (default)")
+    print("  all       - Run all 12 tests (default)")
     print("  quick     - Health, jobs, apps only (3 tests)")
     print("  data      - Jobs, apps, pipelines (3 tests)")
     print("  skills    - Skill loading test (1 test)")
     print("  subagents - All 3 subagent tests")
+    print("  analysis  - Enhanced analysis, caching, hybrid workflow (3 tests)")
     print("  interactive - Multi-turn conversation test")
 
     # Run selected tests
@@ -401,6 +515,8 @@ async def main():
                 await run_skill_tests()
             case "subagents":
                 await run_subagent_tests()
+            case "analysis":
+                await run_analysis_tests()
             case "interactive":
                 await test_interactive()
             case _:

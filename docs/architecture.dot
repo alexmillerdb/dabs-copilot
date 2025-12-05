@@ -10,6 +10,7 @@ digraph DABsCopilot {
     // Core modules: blue
     // CLI modules: orange
     // Tools: purple
+    // Analysis: medium orchid
     // Subagents: cyan
     // External: gray
 
@@ -53,6 +54,7 @@ digraph DABsCopilot {
         bgcolor="#e6f3ff";
 
         agent [label="agent.py\nDABsAgent", fillcolor="#4169E1", fontcolor="white"];
+        prompts [label="prompts.py\nSubagent Prompts", fillcolor="#6495ED"];
 
         subgraph cluster_subagents {
             label="Subagent Definitions (3)";
@@ -72,6 +74,8 @@ digraph DABsCopilot {
         bgcolor="#f5e6ff";
 
         sdk_tools [label="tools/sdk_tools.py\n17 Custom Tools", fillcolor="#9370DB", fontcolor="white"];
+        analysis [label="tools/analysis.py\nHybrid Analysis\n(AST + SQL parsing)", fillcolor="#BA55D3", fontcolor="white"];
+        cache [label=".cache/analysis/\nDisk Cache", fillcolor="#E6E6FA", shape="folder"];
 
         subgraph cluster_tool_categories {
             label="Tool Categories";
@@ -81,6 +85,14 @@ digraph DABsCopilot {
             tools_core [label="Core Tools (10)\nhealth, list_jobs,\nget_job, run_job,\nlist_notebooks, etc.", fillcolor="#DDA0DD"];
             tools_dab [label="DAB Tools (4)\nanalyze_notebook,\ngenerate_bundle,\nvalidate_bundle", fillcolor="#DDA0DD"];
             tools_workspace [label="Workspace Tools (3)\nupload_bundle,\nrun_bundle_command,\nsync_workspace", fillcolor="#DDA0DD"];
+        }
+
+        subgraph cluster_analysis_output {
+            label="Analysis Output";
+            style="rounded,dashed";
+            bgcolor="#e6d5f2";
+
+            analysis_out [label="complexity_score\ndependencies\ndata_sources\ndatabricks_features", fillcolor="#DDA0DD", shape="note"];
         }
     }
 
@@ -124,11 +136,13 @@ digraph DABsCopilot {
 
     cli_auth -> databricks_sdk [label="uses"];
     cli_output -> claude_sdk [label="streams from"];
+    cli_output -> analysis_out [label="displays", style="dashed"];
 
     // Agent connections
     agent -> claude_sdk [label="orchestrates"];
     agent -> sdk_tools [label="custom mode"];
     agent -> mcp_server [label="mcp mode"];
+    agent -> prompts [label="imports"];
 
     agent -> sa_analyst [label="delegates", style="dashed"];
     agent -> sa_builder [label="delegates", style="dashed"];
@@ -144,6 +158,12 @@ digraph DABsCopilot {
     sdk_tools -> tools_core [label="contains"];
     sdk_tools -> tools_dab [label="contains"];
     sdk_tools -> tools_workspace [label="contains"];
+    sdk_tools -> analysis [label="imports"];
+    sdk_tools -> cache [label="reads/writes"];
+
+    // Analysis connections
+    analysis -> analysis_out [label="produces"];
+    tools_dab -> analysis_out [label="returns", style="dashed"];
 
     sdk_tools -> databricks_sdk [label="calls"];
     sdk_tools -> databricks_cli [label="subprocess"];

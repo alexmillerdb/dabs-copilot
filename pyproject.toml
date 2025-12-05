@@ -50,6 +50,9 @@ dependencies = [
 
     # MCP
     "mcp>=1.12.4",
+
+    # Code Analysis
+    "sqlparse>=0.5.0",
 ]
 
 [project.optional-dependencies]

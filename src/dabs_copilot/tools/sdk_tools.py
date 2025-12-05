@@ -1,11 +1,12 @@
 """SDK-compatible custom tools using claude_agent_sdk decorators."""
 import asyncio
 import base64
+import hashlib
 import json
 import os
-import re
 import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import tool, create_sdk_mcp_server
@@ -14,6 +15,8 @@ from claude_agent_sdk import tool, create_sdk_mcp_server
 from databricks.sdk import WorkspaceClient
 from functools import lru_cache
 from dotenv import load_dotenv
+
+from .analysis import analyze_content, calculate_complexity_score
 
 load_dotenv()
 
@@ -34,6 +37,42 @@ def _error_response(message: str) -> dict[str, Any]:
 def _success_response(data: dict[str, Any]) -> dict[str, Any]:
     """Create a standardized success response."""
     return {"content": [{"type": "text", "text": json.dumps(data)}]}
+
+
+# =============================================================================
+# ANALYSIS CACHE
+# =============================================================================
+
+CACHE_DIR = Path(".cache/analysis")
+
+
+def _get_cache_key(file_path: str, content: str) -> str:
+    """Generate cache key from file path and content hash."""
+    try:
+        mtime = int(os.path.getmtime(file_path))
+    except OSError:
+        mtime = 0  # Workspace paths don't have mtime
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:12]
+    name = Path(file_path).stem[:20]
+    return f"{name}_{content_hash}_{mtime}"
+
+
+def _load_from_cache(cache_key: str) -> dict | None:
+    """Load cached analysis if exists."""
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    if cache_file.exists():
+        try:
+            return json.loads(cache_file.read_text())
+        except (json.JSONDecodeError, IOError):
+            return None
+    return None
+
+
+def _save_to_cache(cache_key: str, result: dict) -> None:
+    """Save analysis to disk cache."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = CACHE_DIR / f"{cache_key}.json"
+    cache_file.write_text(json.dumps(result, indent=2))
 
 
 # =============================================================================
@@ -292,10 +331,37 @@ async def get_cluster(args: dict[str, Any]) -> dict[str, Any]:
 # DAB TOOLS
 # =============================================================================
 
-async def _analyze_notebook_impl(notebook_path: str) -> dict[str, Any]:
+def _detect_file_type(path: str, content: str = "") -> str:
+    """Detect file type from path and content."""
+    # Check extension first
+    if path.endswith(".sql"):
+        return "sql"
+    elif path.endswith(".py"):
+        # Check for Databricks notebook markers
+        if "# Databricks notebook source" in content or "# MAGIC" in content:
+            if "# MAGIC %sql" in content:
+                return "mixed_notebook"
+            return "python_notebook"
+        return "python"
+
+    # Default notebook check
+    if "# Databricks notebook source" in content or "# MAGIC" in content:
+        if "# MAGIC %sql" in content or "-- COMMAND" in content:
+            return "mixed_notebook"
+        return "python_notebook"
+
+    return "notebook"
+
+
+async def _analyze_notebook_impl(notebook_path: str, skip_cache: bool = False) -> dict[str, Any]:
     """Internal implementation of notebook analysis.
 
     This is a non-decorated function that can be called directly by other tools.
+    Uses the enhanced analysis module for comprehensive extraction.
+
+    Args:
+        notebook_path: Path to notebook (local or workspace)
+        skip_cache: If True, bypass cache and run fresh analysis
     """
     path = notebook_path
 
@@ -305,54 +371,75 @@ async def _analyze_notebook_impl(notebook_path: str) -> dict[str, Any]:
             content = f.read()
     else:
         from databricks.sdk.service import workspace as ws
+
         client = _get_client()
-        export = await asyncio.to_thread(client.workspace.export, path=path, format=ws.ExportFormat.SOURCE)
-        content = base64.b64decode(export.content).decode('utf-8') if export.content else ""
+        export = await asyncio.to_thread(
+            client.workspace.export, path=path, format=ws.ExportFormat.SOURCE
+        )
+        content = base64.b64decode(export.content).decode("utf-8") if export.content else ""
 
-    # Analyze
-    file_type = 'sql' if path.endswith('.sql') else 'python' if path.endswith('.py') else 'notebook'
+    # Generate cache key
+    cache_key = _get_cache_key(path, content)
 
-    # Extract imports
-    import_pattern = r'(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-    common_libs = {'pandas', 'numpy', 'sklearn', 'tensorflow', 'torch', 'mlflow', 'pyspark', 'databricks'}
-    imports = set(re.findall(import_pattern, content))
-    libraries = [lib for lib in imports if lib in common_libs]
+    # Check cache (unless skip_cache)
+    if not skip_cache:
+        cached = _load_from_cache(cache_key)
+        if cached:
+            cached["cached"] = True
+            return cached
 
-    # Extract widgets
-    widget_pattern = r'dbutils\.widgets\.\w+\(["\']([^"\']+)["\']'
-    widgets = list(set(re.findall(widget_pattern, content)))
+    # Detect file type
+    file_type = _detect_file_type(path, content)
 
-    # Detect workflow type
+    # Run enhanced analysis
+    analysis = analyze_content(content, file_type)
+
+    # Calculate complexity score
+    complexity_score, complexity_factors = calculate_complexity_score(analysis)
+
+    # Build result with backward-compatible fields + new enhanced fields
     content_lower = content.lower()
-    if 'mlflow' in content_lower or 'model' in content_lower:
-        workflow_type = 'ml'
-    elif 'display(' in content or 'plot' in content_lower:
-        workflow_type = 'reporting'
-    elif '@dlt.' in content or 'import dlt' in content:
-        workflow_type = 'dlt'
-    else:
-        workflow_type = 'etl'
+    dependencies = analysis.get("dependencies", {})
+    features = analysis.get("databricks_features", {})
 
-    return {
+    result = {
+        # Backward-compatible fields
         "path": path,
         "file_type": file_type,
-        "libraries": libraries,
-        "widgets": widgets,
-        "workflow_type": workflow_type,
-        "uses_spark": "spark" in content_lower,
-        "uses_mlflow": "mlflow" in content_lower,
-        "uses_dlt": "@dlt." in content or "import dlt" in content
+        "libraries": dependencies.get("third_party", []) + dependencies.get("databricks", []),
+        "widgets": [w["name"] for w in features.get("widgets", [])],
+        "workflow_type": analysis.get("workflow_type", "etl"),
+        "uses_spark": "spark" in content_lower or "pyspark" in str(dependencies),
+        "uses_mlflow": "mlflow" in content_lower or "mlflow" in str(dependencies),
+        "uses_dlt": "@dlt." in content or "import dlt" in content,
+        # NEW: Enhanced fields
+        "dependencies": dependencies,
+        "data_sources": analysis.get("data_sources", {}),
+        "databricks_features": features,
+        "detection_confidence": analysis.get("detection_confidence", 0.5),
+        "complexity_score": complexity_score,
+        "complexity_factors": complexity_factors,
+        # Cache metadata
+        "cached": False,
+        "cache_key": cache_key,
     }
 
+    # Save to cache
+    _save_to_cache(cache_key, result)
 
-@tool("analyze_notebook", "Analyze notebook to extract libraries, parameters, and workflow patterns.", {"notebook_path": str})
+    return result
+
+
+@tool("analyze_notebook", "Analyze notebook to extract libraries, parameters, and workflow patterns.", {"notebook_path": str, "skip_cache": bool})
 async def analyze_notebook(args: dict[str, Any]) -> dict[str, Any]:
     notebook_path = args.get("notebook_path")
     if not notebook_path:
         return _error_response("notebook_path is required")
 
+    skip_cache = args.get("skip_cache", False)
+
     try:
-        result = await _analyze_notebook_impl(notebook_path)
+        result = await _analyze_notebook_impl(notebook_path, skip_cache=skip_cache)
         return _success_response(result)
     except Exception as e:
         return _error_response(f"Analysis failed: {e}")

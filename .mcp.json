@@ -1,12 +1,3 @@
 {
-  "mcpServers": {
-    "databricks-mcp": {
-      "command": "python",
-      "args": ["mcp/server/main.py"],
-      "env": {
-        "DATABRICKS_CONFIG_PROFILE": "${DATABRICKS_CONFIG_PROFILE}",
-        "DATABRICKS_HOST": "${DATABRICKS_HOST}"
-      }
-    }
-  }
+  "mcpServers": {}
 }

@@ -4,6 +4,7 @@ Provides rich console output with streaming support, progress display,
 and YAML extraction from agent responses.
 """
 
+import json
 import re
 from typing import Optional
 
@@ -13,6 +14,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
+from rich.table import Table
 from rich.text import Text
 
 from claude_agent_sdk import (
@@ -38,12 +40,187 @@ class StreamingOutputHandler:
         self.console = console or Console()
         self.verbose = verbose
         self.last_yaml_content: Optional[str] = None
+        self.last_analysis_result: Optional[dict] = None
+
+    def _format_complexity_score(self, score: float) -> Text:
+        """Format complexity score with color coding.
+
+        Green: < 0.3 (simple)
+        Yellow: 0.3 - 0.5 (moderate)
+        Orange: 0.5 - 0.7 (complex)
+        Red: >= 0.7 (very complex)
+        """
+        text = Text()
+        if score < 0.3:
+            text.append(f"{score:.2f}", style="bold green")
+            text.append(" (simple)", style="dim green")
+        elif score < 0.5:
+            text.append(f"{score:.2f}", style="bold yellow")
+            text.append(" (moderate)", style="dim yellow")
+        elif score < 0.7:
+            text.append(f"{score:.2f}", style="bold dark_orange")
+            text.append(" (complex)", style="dim dark_orange")
+        else:
+            text.append(f"{score:.2f}", style="bold red")
+            text.append(" (very complex)", style="dim red")
+        return text
+
+    def _format_dependencies_table(self, dependencies: dict) -> Table:
+        """Create a Rich table for categorized dependencies."""
+        table = Table(show_header=True, header_style="bold cyan", box=None)
+        table.add_column("Category", style="bold")
+        table.add_column("Packages")
+
+        category_styles = {
+            "databricks": "blue",
+            "third_party": "magenta",
+            "standard_library": "dim",
+            "local": "yellow",
+        }
+
+        for category, packages in dependencies.items():
+            if packages:
+                style = category_styles.get(category, "white")
+                display_name = category.replace("_", " ").title()
+                table.add_row(display_name, ", ".join(sorted(packages)), style=style)
+
+        return table
+
+    def _format_data_sources(self, data_sources: dict) -> Panel:
+        """Format data sources as a panel."""
+        content = Text()
+
+        input_tables = data_sources.get("input_tables", [])
+        output_tables = data_sources.get("output_tables", [])
+        file_paths = data_sources.get("file_paths", [])
+
+        if input_tables:
+            content.append("Input Tables: ", style="bold green")
+            content.append(", ".join(input_tables) + "\n")
+
+        if output_tables:
+            content.append("Output Tables: ", style="bold red")
+            content.append(", ".join(output_tables) + "\n")
+
+        if file_paths:
+            content.append("File Paths: ", style="bold yellow")
+            content.append(", ".join(file_paths))
+
+        return Panel(content, title="Data Sources", border_style="cyan")
+
+    def print_analysis_result(self, analysis: dict, show_full: bool = False):
+        """Print formatted analysis result.
+
+        Args:
+            analysis: Analysis result dict from analyze_notebook
+            show_full: If True, show all details including databricks_features
+        """
+        path = analysis.get("path", "Unknown")
+        workflow_type = analysis.get("workflow_type", "unknown")
+        confidence = analysis.get("detection_confidence", 0.0)
+        cached = analysis.get("cached", False)
+
+        # Header
+        header = Text()
+        header.append("Analysis: ", style="bold")
+        header.append(path, style="cyan")
+        if cached:
+            header.append(" (cached)", style="dim")
+        self.console.print(header)
+        self.console.print()
+
+        # Complexity score
+        complexity_score = analysis.get("complexity_score", 0.0)
+        score_text = Text()
+        score_text.append("Complexity Score: ")
+        score_text.append_text(self._format_complexity_score(complexity_score))
+        self.console.print(score_text)
+
+        # Complexity factors
+        factors = analysis.get("complexity_factors", [])
+        if factors:
+            self.console.print(f"[dim]Factors: {', '.join(factors)}[/dim]")
+
+        self.console.print()
+
+        # Workflow type and confidence
+        workflow_text = Text()
+        workflow_text.append("Workflow: ", style="bold")
+        workflow_text.append(workflow_type.upper(), style="bold magenta")
+        workflow_text.append(f" (confidence: {confidence:.0%})", style="dim")
+        self.console.print(workflow_text)
+        self.console.print()
+
+        # Dependencies table
+        dependencies = analysis.get("dependencies", {})
+        if any(dependencies.values()):
+            self.console.print(self._format_dependencies_table(dependencies))
+            self.console.print()
+
+        # Data sources panel
+        data_sources = analysis.get("data_sources", {})
+        if any(data_sources.values()):
+            self.console.print(self._format_data_sources(data_sources))
+            self.console.print()
+
+        # Databricks features (verbose/full mode only)
+        if show_full:
+            features = analysis.get("databricks_features", {})
+            if any(features.values()):
+                self._print_databricks_features(features)
+
+    def _print_databricks_features(self, features: dict):
+        """Print Databricks-specific features."""
+        content = Text()
+
+        widgets = features.get("widgets", [])
+        if widgets:
+            content.append("Widgets: ", style="bold")
+            widget_names = [w.get("name", "?") for w in widgets if isinstance(w, dict)]
+            if widget_names:
+                content.append(", ".join(widget_names) + "\n")
+
+        notebook_calls = features.get("notebook_calls", [])
+        if notebook_calls:
+            content.append("Notebook Calls: ", style="bold")
+            content.append(", ".join(notebook_calls) + "\n")
+
+        cluster_configs = features.get("cluster_configs", [])
+        if cluster_configs:
+            content.append("Cluster Configs: ", style="bold")
+            content.append(", ".join(cluster_configs))
+
+        if str(content):
+            self.console.print(
+                Panel(content, title="Databricks Features", border_style="blue")
+            )
+
+    def _extract_analysis_result(self, text: str) -> Optional[dict]:
+        """Extract analyze_notebook result from agent text response.
+
+        Returns:
+            Parsed analysis dict if found, None otherwise
+        """
+        # Look for JSON code blocks with analysis markers
+        json_pattern = r"```(?:json)?\s*\n(\{[^`]+\})\s*```"
+        matches = re.findall(json_pattern, text, re.DOTALL)
+
+        for match in matches:
+            try:
+                data = json.loads(match)
+                if "complexity_score" in data and "dependencies" in data:
+                    return data
+            except json.JSONDecodeError:
+                continue
+
+        return None
 
     async def stream_response(
         self,
         agent,
         message: str,
         session_id: str = "default",
+        show_analysis: bool = True,
     ) -> Optional[str]:
         """
         Stream agent response and extract YAML content if present.
@@ -52,11 +229,13 @@ class StreamingOutputHandler:
             agent: DABsAgent instance
             message: User message to send
             session_id: Session ID for multi-turn conversations
+            show_analysis: If True, display analysis results when detected
 
         Returns:
             Extracted YAML content if databricks.yml was generated, else None
         """
         self.last_yaml_content = None
+        self.last_analysis_result = None
         full_response = ""
         tool_calls = []  # Track tool calls for display
 
@@ -150,6 +329,14 @@ class StreamingOutputHandler:
             # Show summary of tool calls if any were made
             if tool_calls:
                 self.console.print(f"[dim]Tools used: {', '.join(tool_calls)}[/dim]")
+
+        # Extract and display analysis results if present
+        if show_analysis and full_response:
+            analysis = self._extract_analysis_result(full_response)
+            if analysis:
+                self.last_analysis_result = analysis
+                self.console.print()
+                self.print_analysis_result(analysis, show_full=self.verbose)
 
         return self.last_yaml_content
 
@@ -250,6 +437,7 @@ def create_welcome_panel() -> Panel:
     content.append("  /tools        - List available tools\n")
     content.append("  /help         - Show this help\n")
     content.append("  /save PATH    - Save last generated YAML\n")
+    content.append("  /analyze      - Show last analysis result\n")
 
     return Panel(content, title="Welcome", border_style="blue")
 

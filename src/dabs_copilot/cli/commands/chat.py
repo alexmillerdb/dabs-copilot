@@ -149,6 +149,14 @@ async def chat(
                     )
                     continue
 
+                elif cmd == "/analyze":
+                    if output.last_analysis_result:
+                        output.print_analysis_result(output.last_analysis_result, show_full=True)
+                    else:
+                        console.print("[yellow]No analysis result available.[/yellow]")
+                        console.print("[dim]Ask the agent to analyze a notebook first.[/dim]")
+                    continue
+
                 else:
                     console.print(f"[yellow]Unknown command:[/yellow] {cmd}")
                     _print_help(console)
@@ -184,6 +192,7 @@ def _print_help(console: Console):
     help_text.append("  /tools        - List available tools\n")
     help_text.append("  /help         - Show this help\n")
     help_text.append("  /save PATH    - Save last generated YAML\n")
+    help_text.append("  /analyze      - Show last analysis result\n")
     console.print(help_text)
 
 
