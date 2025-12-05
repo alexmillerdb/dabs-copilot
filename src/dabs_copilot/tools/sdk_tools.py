@@ -643,6 +643,276 @@ async def sync_workspace_to_local(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # =============================================================================
+# APPS TOOLS
+# =============================================================================
+
+@tool("list_apps", "List Databricks Apps in workspace with status and URLs.", {"limit": int})
+async def list_apps(args: dict[str, Any]) -> dict[str, Any]:
+    """List all Databricks Apps in the workspace.
+
+    Maps to: client.apps.list()
+    """
+    try:
+        client = _get_client()
+        limit = args.get("limit", 100)
+
+        def _list_apps_sync():
+            apps = []
+            for app in client.apps.list():
+                if len(apps) >= limit:
+                    break
+                apps.append({
+                    "name": app.name,
+                    "description": app.description,
+                    "create_time": str(app.create_time) if app.create_time else None,
+                    "creator": app.creator,
+                    "url": app.url,
+                    "pending_deployment": app.pending_deployment.deployment_id if app.pending_deployment else None,
+                    "active_deployment": app.active_deployment.deployment_id if app.active_deployment else None,
+                })
+            return apps
+
+        apps = await asyncio.to_thread(_list_apps_sync)
+        return _success_response({"apps": apps, "count": len(apps)})
+    except Exception as e:
+        return _error_response(f"Failed to list apps: {e}")
+
+
+@tool("get_app", "Get Databricks App details including config and bindings.", {"name": str})
+async def get_app(args: dict[str, Any]) -> dict[str, Any]:
+    """Get detailed information about a specific Databricks App.
+
+    Maps to: client.apps.get(name="my-app")
+    """
+    name = args.get("name")
+    if not name:
+        return _error_response("name is required")
+
+    try:
+        client = _get_client()
+        app = await asyncio.to_thread(client.apps.get, name=name)
+
+        # Extract resource bindings if present
+        resources = []
+        if app.resources:
+            for resource in app.resources:
+                resources.append({
+                    "name": resource.name,
+                    "description": resource.description,
+                    "job": {"id": resource.job.id, "permission": resource.job.permission} if resource.job else None,
+                    "secret": {"key": resource.secret.key, "scope": resource.secret.scope, "permission": resource.secret.permission} if resource.secret else None,
+                    "sql_warehouse": {"id": resource.sql_warehouse.id, "permission": resource.sql_warehouse.permission} if resource.sql_warehouse else None,
+                    "serving_endpoint": {"name": resource.serving_endpoint.name, "permission": resource.serving_endpoint.permission} if resource.serving_endpoint else None,
+                })
+
+        return _success_response({
+            "name": app.name,
+            "description": app.description,
+            "url": app.url,
+            "creator": app.creator,
+            "create_time": str(app.create_time) if app.create_time else None,
+            "update_time": str(app.update_time) if app.update_time else None,
+            "compute_status": app.compute_status.state.value if app.compute_status and app.compute_status.state else None,
+            "resources": resources,
+            "default_source_code_path": app.default_source_code_path,
+            "active_deployment_id": app.active_deployment.deployment_id if app.active_deployment else None,
+        })
+    except Exception as e:
+        return _error_response(f"Failed to get app: {e}")
+
+
+@tool("get_app_deployment", "Get active deployment details for an app.", {"app_name": str, "deployment_id": str})
+async def get_app_deployment(args: dict[str, Any]) -> dict[str, Any]:
+    """Get deployment information for a Databricks App.
+
+    Maps to: client.apps.get_deployment(app_name="my-app", deployment_id="...")
+    """
+    app_name = args.get("app_name")
+    if not app_name:
+        return _error_response("app_name is required")
+
+    deployment_id = args.get("deployment_id")
+    if not deployment_id:
+        return _error_response("deployment_id is required")
+
+    try:
+        client = _get_client()
+        deployment = await asyncio.to_thread(
+            client.apps.get_deployment,
+            app_name=app_name,
+            deployment_id=deployment_id
+        )
+
+        return _success_response({
+            "deployment_id": deployment.deployment_id,
+            "source_code_path": deployment.source_code_path,
+            "status": deployment.status.state.value if deployment.status and deployment.status.state else None,
+            "status_message": deployment.status.message if deployment.status else None,
+            "create_time": str(deployment.create_time) if deployment.create_time else None,
+            "update_time": str(deployment.update_time) if deployment.update_time else None,
+            "mode": deployment.mode.value if deployment.mode else None,
+            "deployment_artifacts": {
+                "source_code_path": deployment.deployment_artifacts.source_code_path if deployment.deployment_artifacts else None,
+            } if deployment.deployment_artifacts else None,
+        })
+    except Exception as e:
+        return _error_response(f"Failed to get app deployment: {e}")
+
+
+@tool("get_app_environment", "Get app runtime environment config.", {"name": str})
+async def get_app_environment(args: dict[str, Any]) -> dict[str, Any]:
+    """Get runtime environment configuration for a Databricks App.
+
+    Maps to: client.apps.get_environment(name="my-app")
+    """
+    name = args.get("name")
+    if not name:
+        return _error_response("name is required")
+
+    try:
+        client = _get_client()
+        env = await asyncio.to_thread(client.apps.get_environment, name=name)
+
+        # Extract environment variables (not secret values)
+        env_vars = []
+        if env.env:
+            for e in env.env:
+                env_vars.append({
+                    "name": e.name,
+                    "value": e.value,
+                    "value_from": e.value_from.value if e.value_from else None,
+                })
+
+        return _success_response({
+            "name": name,
+            "env": env_vars,
+        })
+    except Exception as e:
+        return _error_response(f"Failed to get app environment: {e}")
+
+
+@tool("get_app_permissions", "Get app permissions and access control.", {"app_name": str})
+async def get_app_permissions(args: dict[str, Any]) -> dict[str, Any]:
+    """Get permission levels for a Databricks App.
+
+    Maps to: client.apps.get_permission_levels(app_name="my-app")
+    """
+    app_name = args.get("app_name")
+    if not app_name:
+        return _error_response("app_name is required")
+
+    try:
+        client = _get_client()
+        perms = await asyncio.to_thread(client.apps.get_permission_levels, app_name=app_name)
+
+        permission_levels = []
+        if perms.permission_levels:
+            for level in perms.permission_levels:
+                permission_levels.append({
+                    "permission_level": level.permission_level.value if level.permission_level else None,
+                    "description": level.description,
+                })
+
+        return _success_response({
+            "app_name": app_name,
+            "permission_levels": permission_levels,
+        })
+    except Exception as e:
+        return _error_response(f"Failed to get app permissions: {e}")
+
+
+# =============================================================================
+# PIPELINE TOOLS
+# =============================================================================
+
+@tool("list_pipelines", "List DLT pipelines in workspace with status.", {"limit": int, "name_filter": str})
+async def list_pipelines(args: dict[str, Any]) -> dict[str, Any]:
+    """List all DLT (Delta Live Tables) pipelines in the workspace.
+
+    Maps to: client.pipelines.list_pipelines()
+    """
+    try:
+        client = _get_client()
+        limit = args.get("limit", 100)
+        name_filter = (args.get("name_filter") or "").lower()
+
+        def _list_pipelines_sync():
+            pipelines = []
+            for p in client.pipelines.list_pipelines():
+                if len(pipelines) >= limit:
+                    break
+                name = p.name or ""
+                if not name_filter or name_filter in name.lower():
+                    pipelines.append({
+                        "pipeline_id": p.pipeline_id,
+                        "name": name,
+                        "state": p.state.value if p.state else None,
+                        "creator_user_name": p.creator_user_name,
+                        "cluster_id": p.cluster_id,
+                    })
+            return pipelines
+
+        pipelines = await asyncio.to_thread(_list_pipelines_sync)
+        return _success_response({"pipelines": pipelines, "count": len(pipelines)})
+    except Exception as e:
+        return _error_response(f"Failed to list pipelines: {e}")
+
+
+@tool("get_pipeline", "Get DLT pipeline details including config and clusters.", {"pipeline_id": str})
+async def get_pipeline(args: dict[str, Any]) -> dict[str, Any]:
+    """Get detailed information about a specific DLT pipeline.
+
+    Maps to: client.pipelines.get(pipeline_id="...")
+    """
+    pipeline_id = args.get("pipeline_id")
+    if not pipeline_id:
+        return _error_response("pipeline_id is required")
+
+    try:
+        client = _get_client()
+        pipeline = await asyncio.to_thread(client.pipelines.get, pipeline_id=pipeline_id)
+
+        # Extract libraries
+        libraries = []
+        if pipeline.spec and pipeline.spec.libraries:
+            for lib in pipeline.spec.libraries:
+                if lib.notebook:
+                    libraries.append({"notebook": {"path": lib.notebook.path}})
+                elif lib.file:
+                    libraries.append({"file": {"path": lib.file.path}})
+                elif lib.jar:
+                    libraries.append({"jar": lib.jar})
+
+        # Extract clusters
+        clusters = []
+        if pipeline.spec and pipeline.spec.clusters:
+            for c in pipeline.spec.clusters:
+                clusters.append({
+                    "label": c.label,
+                    "num_workers": c.num_workers,
+                    "node_type_id": c.node_type_id,
+                    "autoscale": {"min_workers": c.autoscale.min_workers, "max_workers": c.autoscale.max_workers} if c.autoscale else None,
+                })
+
+        return _success_response({
+            "pipeline_id": pipeline.pipeline_id,
+            "name": pipeline.name,
+            "state": pipeline.state.value if pipeline.state else None,
+            "creator_user_name": pipeline.creator_user_name,
+            "target": pipeline.spec.target if pipeline.spec else None,
+            "storage": pipeline.spec.storage if pipeline.spec else None,
+            "catalog": pipeline.spec.catalog if pipeline.spec else None,
+            "libraries": libraries,
+            "clusters": clusters,
+            "continuous": pipeline.spec.continuous if pipeline.spec else None,
+            "development": pipeline.spec.development if pipeline.spec else None,
+            "channel": pipeline.spec.channel if pipeline.spec else None,
+        })
+    except Exception as e:
+        return _error_response(f"Failed to get pipeline: {e}")
+
+
+# =============================================================================
 # SDK MCP SERVER
 # =============================================================================
 
@@ -655,6 +925,10 @@ ALL_TOOLS = [
     analyze_notebook, generate_bundle, generate_bundle_from_job, validate_bundle,
     # Workspace
     upload_bundle, run_bundle_command, sync_workspace_to_local,
+    # Apps
+    list_apps, get_app, get_app_deployment, get_app_environment, get_app_permissions,
+    # Pipelines
+    list_pipelines, get_pipeline,
 ]
 
 # Tool categories for filtering
@@ -662,6 +936,8 @@ CORE_TOOLS = [health, list_jobs, get_job, run_job, list_notebooks, export_notebo
               execute_dbsql, list_warehouses, list_dbfs_files, get_cluster]
 DAB_TOOLS = [analyze_notebook, generate_bundle, generate_bundle_from_job, validate_bundle]
 WORKSPACE_TOOLS = [upload_bundle, run_bundle_command, sync_workspace_to_local]
+APP_TOOLS = [list_apps, get_app, get_app_deployment, get_app_environment, get_app_permissions]
+PIPELINE_TOOLS = [list_pipelines, get_pipeline]
 
 # Destructive tools that need confirmation
 DESTRUCTIVE_TOOL_NAMES = ["run_job", "upload_bundle", "run_bundle_command", "execute_dbsql"]

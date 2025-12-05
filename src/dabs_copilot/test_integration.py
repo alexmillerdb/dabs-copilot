@@ -3,6 +3,12 @@ Local integration test for DABsAgent.
 
 Run with: python -m src.dabs_copilot.test_integration
          or: cd src/dabs_copilot && python test_integration.py
+
+Tests include:
+- Basic connectivity and MCP tool access
+- Skills loading (databricks-asset-bundles)
+- Subagent invocation (analyst, builder, deployer)
+- Data listing (jobs, apps, pipelines via SQL)
 """
 import asyncio
 import os
@@ -18,7 +24,33 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from agent import DABsAgent, MCP_TOOLS, MCP_DESTRUCTIVE_TOOLS, DABS_AGENTS, CUSTOM_TOOLS_SERVER
+# Handle both direct execution and pytest from project root
+try:
+    from agent import (
+        DABsAgent,
+        MCP_TOOLS,
+        MCP_DESTRUCTIVE_TOOLS,
+        DABS_AGENTS,
+        CUSTOM_TOOLS_SERVER,
+    )
+    from prompts import (
+        SUBAGENT_ANALYST,
+        SUBAGENT_BUILDER,
+        SUBAGENT_DEPLOYER,
+    )
+except ImportError:
+    from dabs_copilot.agent import (
+        DABsAgent,
+        MCP_TOOLS,
+        MCP_DESTRUCTIVE_TOOLS,
+        DABS_AGENTS,
+        CUSTOM_TOOLS_SERVER,
+    )
+    from dabs_copilot.prompts import (
+        SUBAGENT_ANALYST,
+        SUBAGENT_BUILDER,
+        SUBAGENT_DEPLOYER,
+    )
 
 load_dotenv()
 
@@ -64,16 +96,203 @@ async def confirm_action(tool_name: str, tool_input: dict) -> bool:
     return response.lower() == "y"
 
 
+async def test_health_check():
+    """Test basic connectivity and health check."""
+    print("\n" + "=" * 60)
+    print("TEST 1: Health Check")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = "Check if the Databricks connection is healthy using the health tool. Return the workspace URL and user."
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ Health check test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_list_jobs():
+    """Test listing 5 jobs."""
+    print("\n" + "=" * 60)
+    print("TEST 2: List Jobs (limit 5)")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = "List 5 jobs from the workspace using the list_jobs tool with limit=5. Show job ID, name, and creator for each."
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ List jobs test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_list_apps():
+    """Test listing 5 apps."""
+    print("\n" + "=" * 60)
+    print("TEST 3: List Apps (limit 5)")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = "List 5 Databricks Apps from the workspace using the list_apps tool with limit=5. Show app name, URL, and status for each."
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ List apps test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_list_pipelines():
+    """Test listing 5 DLT pipelines using list_pipelines tool."""
+    print("\n" + "=" * 60)
+    print("TEST 4: List Pipelines (limit 5)")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = "List 5 DLT pipelines from the workspace using the list_pipelines tool with limit=5. Show pipeline ID, name, creator, and state for each."
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ List pipelines test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_skill_loading():
+    """Test loading the databricks-asset-bundles skill."""
+    print("\n" + "=" * 60)
+    print("TEST 5: Skill Loading")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = """Load the databricks-asset-bundles skill using the Skill tool.
+Then briefly describe what patterns are available (ETL, ML, DLT, Apps, Multi-team).
+Just list the pattern names and one-line descriptions."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print("\n✓ Skill loading test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_subagent_analyst():
+    """Test the analyst subagent."""
+    print("\n" + "=" * 60)
+    print(f"TEST 6: Subagent - {SUBAGENT_ANALYST}")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = f"""Use the Task tool to spawn the '{SUBAGENT_ANALYST}' subagent with this task:
+"List 3 jobs from the workspace and identify their workload types (ETL, ML, DLT, or other)."
+
+Return the subagent's analysis results."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print(f"\n✓ {SUBAGENT_ANALYST} test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_subagent_builder():
+    """Test the builder subagent."""
+    print("\n" + "=" * 60)
+    print(f"TEST 7: Subagent - {SUBAGENT_BUILDER}")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = f"""Use the Task tool to spawn the '{SUBAGENT_BUILDER}' subagent with this task:
+"Load the databricks-asset-bundles skill and describe the recommended bundle structure for a simple ETL job with 2 tasks."
+
+Return the subagent's recommendations (do NOT generate actual YAML)."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print(f"\n✓ {SUBAGENT_BUILDER} test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
+async def test_subagent_deployer():
+    """Test the deployer subagent."""
+    print("\n" + "=" * 60)
+    print(f"TEST 8: Subagent - {SUBAGENT_DEPLOYER}")
+    print("=" * 60)
+
+    try:
+        async with DABsAgent(confirm_destructive=confirm_action) as agent:
+            prompt = f"""Use the Task tool to spawn the '{SUBAGENT_DEPLOYER}' subagent with this task:
+"Load the databricks-asset-bundles skill and explain the deployment best practices for a dev target."
+
+Return the subagent's deployment guidance (do NOT execute any deployment)."""
+            print(f"\nYou: {prompt}")
+            print("-" * 40)
+
+            async for msg in agent.chat(prompt):
+                print_message(msg)
+
+            print(f"\n✓ {SUBAGENT_DEPLOYER} test complete")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        raise
+
+
 async def test_interactive():
     """Test interactive multi-turn conversation."""
     print("\n" + "=" * 60)
-    print("TEST: Interactive DABsAgent")
+    print("TEST 9: Interactive Multi-turn Conversation")
     print("=" * 60)
 
     try:
         async with DABsAgent(confirm_destructive=confirm_action) as agent:
             # First turn
-            prompt1 = "What MCP tools do you have available? Just list the tool names."
+            prompt1 = "What MCP tools do you have available? Just list the tool names grouped by category."
             print(f"\nYou: {prompt1}")
             print("-" * 40)
 
@@ -82,8 +301,8 @@ async def test_interactive():
 
             print(f"\nSession ID: {agent.session_id}")
 
-            # Second turn - follow-up
-            prompt2 = "Now check if the Databricks connection is healthy using the health tool."
+            # Second turn - follow-up referencing previous context
+            prompt2 = "From those tools, which ones are for Databricks Apps? List them."
             print(f"\nYou: {prompt2}")
             print("-" * 40)
 
@@ -97,26 +316,95 @@ async def test_interactive():
         raise
 
 
+async def run_quick_tests():
+    """Run quick tests only (health, jobs, apps)."""
+    await test_health_check()
+    await test_list_jobs()
+    await test_list_apps()
+
+
+async def run_data_tests():
+    """Run data listing tests (jobs, apps, pipelines)."""
+    await test_list_jobs()
+    await test_list_apps()
+    await test_list_pipelines()
+
+
+async def run_skill_tests():
+    """Run skill-related tests."""
+    await test_skill_loading()
+
+
+async def run_subagent_tests():
+    """Run all subagent tests."""
+    await test_subagent_analyst()
+    await test_subagent_builder()
+    await test_subagent_deployer()
+
+
+async def run_all_tests():
+    """Run all integration tests."""
+    await test_health_check()
+    await test_list_jobs()
+    await test_list_apps()
+    await test_list_pipelines()
+    await test_skill_loading()
+    await test_subagent_analyst()
+    await test_subagent_builder()
+    await test_subagent_deployer()
+    await test_interactive()
+
+
 async def main():
     print("=" * 60)
-    print("DABs Copilot Agent - Integration Test")
+    print("DABs Copilot Agent - Integration Test Suite")
     print("=" * 60)
 
-    print(f"\nMCP Tools available: {len(MCP_TOOLS)}")
-    print(f"Destructive tools (MCP mode): {len(MCP_DESTRUCTIVE_TOOLS)}")
-    print(f"Subagents defined: {len(DABS_AGENTS)}")
-    print(f"Custom tools server: {CUSTOM_TOOLS_SERVER}")
+    print(f"\nConfiguration:")
+    print(f"  MCP Tools available: {len(MCP_TOOLS)}")
+    print(f"  Destructive tools: {len(MCP_DESTRUCTIVE_TOOLS)}")
+    print(f"  Subagents defined: {len(DABS_AGENTS)}")
+    print(f"    - {SUBAGENT_ANALYST}")
+    print(f"    - {SUBAGENT_BUILDER}")
+    print(f"    - {SUBAGENT_DEPLOYER}")
+    print(f"  Custom tools server: {CUSTOM_TOOLS_SERVER}")
 
     # Check environment
     mcp_url = os.getenv("DABS_MCP_SERVER_URL")
     if mcp_url:
-        print(f"MCP Server URL: {mcp_url}")
+        print(f"  MCP Server URL: {mcp_url}")
     else:
-        print("MCP Server: Local subprocess mode")
+        print("  MCP Server: Local subprocess mode")
 
-    # Run tests
+    # Parse command line args for test selection
+    test_suite = "all"
+    if len(sys.argv) > 1:
+        test_suite = sys.argv[1].lower()
+
+    print(f"\nTest suite: {test_suite}")
+    print("\nAvailable test suites:")
+    print("  all       - Run all 9 tests (default)")
+    print("  quick     - Health, jobs, apps only (3 tests)")
+    print("  data      - Jobs, apps, pipelines (3 tests)")
+    print("  skills    - Skill loading test (1 test)")
+    print("  subagents - All 3 subagent tests")
+    print("  interactive - Multi-turn conversation test")
+
+    # Run selected tests
     try:
-        await test_interactive()
+        match test_suite:
+            case "quick":
+                await run_quick_tests()
+            case "data":
+                await run_data_tests()
+            case "skills":
+                await run_skill_tests()
+            case "subagents":
+                await run_subagent_tests()
+            case "interactive":
+                await test_interactive()
+            case _:
+                await run_all_tests()
 
         print("\n" + "=" * 60)
         print("All integration tests passed!")
@@ -127,6 +415,8 @@ async def main():
         sys.exit(1)
     except Exception as e:
         print(f"\n\nTest failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
