@@ -104,6 +104,7 @@ dabs-copilot generate "/Workspace/Users/me/etl" -n data-pipeline -t dev
 | `-n, --name` | Bundle name (auto-generated if omitted) |
 | `-t, --target` | Target environment (default: dev) |
 | `-y, --yes` | Skip confirmation prompts |
+| `--skip-cache` | Force fresh analysis (skip cached results) |
 
 ### `dabs-copilot validate [BUNDLE_PATH]`
 
@@ -137,6 +138,7 @@ dabs-copilot chat "Help me create a bundle for job 12345"
 - `/reset` - Start new conversation
 - `/tools` - List available tools
 - `/save PATH` - Save generated YAML
+- `/analyze` - Show last analysis result (complexity, dependencies, data sources)
 
 ## Authentication
 
@@ -215,7 +217,10 @@ src/dabs_copilot/
 │   ├── output.py           # Rich console output
 │   └── commands/           # generate, validate, deploy, chat
 ├── agent.py                # DABsAgent (Claude SDK)
-└── tools/sdk_tools.py      # 17 Databricks tools
+├── prompts.py              # Subagent prompts
+└── tools/
+    ├── sdk_tools.py        # 17 Databricks tools
+    └── analysis.py         # Hybrid notebook analysis (AST + complexity scoring)
 ```
 
 ## Development

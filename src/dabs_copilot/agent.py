@@ -38,6 +38,8 @@ try:
         CORE_TOOLS as SDK_CORE_TOOLS,
         DAB_TOOLS as SDK_DAB_TOOLS,
         WORKSPACE_TOOLS as SDK_WORKSPACE_TOOLS,
+        APP_TOOLS as SDK_APP_TOOLS,
+        PIPELINE_TOOLS as SDK_PIPELINE_TOOLS,
         DESTRUCTIVE_TOOL_NAMES as SDK_DESTRUCTIVE_TOOL_NAMES,
     )
 except ImportError:
@@ -48,6 +50,8 @@ except ImportError:
         CORE_TOOLS as SDK_CORE_TOOLS,
         DAB_TOOLS as SDK_DAB_TOOLS,
         WORKSPACE_TOOLS as SDK_WORKSPACE_TOOLS,
+        APP_TOOLS as SDK_APP_TOOLS,
+        PIPELINE_TOOLS as SDK_PIPELINE_TOOLS,
         DESTRUCTIVE_TOOL_NAMES as SDK_DESTRUCTIVE_TOOL_NAMES,
     )
 
@@ -79,6 +83,7 @@ CUSTOM_TOOLS_SERVER = "databricks-mcp"
 
 # Base tool names (without MCP prefix)
 _MCP_TOOL_NAMES = [
+    # Core tools
     "health",
     "list_jobs",
     "get_job",
@@ -89,13 +94,24 @@ _MCP_TOOL_NAMES = [
     "list_warehouses",
     "list_dbfs_files",
     "get_cluster",
+    # DAB tools
     "analyze_notebook",
     "generate_bundle",
     "generate_bundle_from_job",
     "validate_bundle",
+    # Workspace tools
     "upload_bundle",
     "run_bundle_command",
     "sync_workspace_to_local",
+    # Apps tools
+    "list_apps",
+    "get_app",
+    "get_app_deployment",
+    "get_app_environment",
+    "get_app_permissions",
+    # Pipeline tools
+    "list_pipelines",
+    "get_pipeline",
 ]
 
 # Destructive tool names (subset that requires confirmation)
@@ -132,7 +148,7 @@ def _get_tools_by_category(category: str | None) -> list:
     """Get SDK tool list for a category.
 
     Args:
-        category: "core", "dab", "workspace", or None for all
+        category: "core", "dab", "workspace", "app", "pipeline", or None for all
 
     Returns:
         List of SDK tool definitions
@@ -144,6 +160,10 @@ def _get_tools_by_category(category: str | None) -> list:
             return SDK_DAB_TOOLS
         case "workspace":
             return SDK_WORKSPACE_TOOLS
+        case "app":
+            return SDK_APP_TOOLS
+        case "pipeline":
+            return SDK_PIPELINE_TOOLS
         case _:
             return SDK_ALL_TOOLS
 
@@ -186,16 +206,27 @@ def get_project_root() -> str:
 
 DABS_AGENTS = {
     SUBAGENT_ANALYST: AgentDefinition(
-        description="Analyzes Databricks jobs and notebooks. EXECUTES get_job, list_notebooks, analyze_notebook tools.",
+        description="Analyzes Databricks jobs, notebooks, apps, and pipelines. EXECUTES get_job, list_notebooks, analyze_notebook, list_apps, list_pipelines tools.",
         prompt=DAB_ANALYST_PROMPT,
         tools=[
+            # Discovery tools
             "mcp__databricks-mcp__get_job",
             "mcp__databricks-mcp__list_jobs",
             "mcp__databricks-mcp__list_notebooks",
             "mcp__databricks-mcp__export_notebook",
             "mcp__databricks-mcp__analyze_notebook",
             "mcp__databricks-mcp__get_cluster",
-            "Read", "Grep", "Glob",
+            # Apps tools for app analysis
+            "mcp__databricks-mcp__list_apps",
+            "mcp__databricks-mcp__get_app",
+            "mcp__databricks-mcp__get_app_deployment",
+            "mcp__databricks-mcp__get_app_environment",
+            "mcp__databricks-mcp__get_app_permissions",
+            # Pipeline tools for DLT analysis
+            "mcp__databricks-mcp__list_pipelines",
+            "mcp__databricks-mcp__get_pipeline",
+            # File and pattern tools
+            "Read", "Grep", "Glob", "Skill",
         ],
         model="inherit",
     ),
@@ -203,9 +234,17 @@ DABS_AGENTS = {
         description="Generates and validates DAB bundles. EXECUTES generate_bundle, validate_bundle tools.",
         prompt=DAB_BUILDER_PROMPT,
         tools=[
+            # Bundle generation tools
             "mcp__databricks-mcp__generate_bundle",
             "mcp__databricks-mcp__generate_bundle_from_job",
             "mcp__databricks-mcp__validate_bundle",
+            # Apps tools for apps bundle generation
+            "mcp__databricks-mcp__list_apps",
+            "mcp__databricks-mcp__get_app",
+            "mcp__databricks-mcp__get_app_deployment",
+            "mcp__databricks-mcp__get_app_environment",
+            "mcp__databricks-mcp__get_app_permissions",
+            # File and pattern tools
             "Write", "Edit", "Read", "Skill",
         ],
         model="inherit",
@@ -214,9 +253,12 @@ DABS_AGENTS = {
         description="Deploys bundles to Databricks workspace. EXECUTES upload_bundle, run_bundle_command tools.",
         prompt=DAB_DEPLOYER_PROMPT,
         tools=[
+            # Deployment tools
             "mcp__databricks-mcp__upload_bundle",
             "mcp__databricks-mcp__run_bundle_command",
             "mcp__databricks-mcp__sync_workspace_to_local",
+            # Pattern tool for deployment best practices
+            "Skill",
         ],
         model="inherit",
     ),

@@ -1,324 +1,318 @@
 ---
 name: databricks-asset-bundles
-description: Use when generating, validating, or deploying Databricks Asset Bundles (DABs). Provides patterns, best practices, and YAML templates for bundle configuration.
+description: >-
+  Use when generating, validating, or deploying Databricks Asset Bundles (DABs).
+  Provides patterns, best practices, and YAML templates for bundle configuration.
+  Triggers: databricks.yml, bundle validate, bundle deploy, job clusters,
+  DLT/Lakeflow pipelines, MLflow experiments, model serving endpoints,
+  Unity Catalog schemas/volumes, Databricks Apps, serverless compute.
+  Workload types: ETL, ML/MLOps, SQL analytics, streaming, custom apps, multi-team projects.
+  Emphasizes modular structure with resources/ folder organization.
 ---
 
 # Databricks Asset Bundles (DABs) Skill
 
-This skill provides comprehensive knowledge for generating, validating, and deploying Databricks Asset Bundles.
+Generate, validate, and deploy Databricks Asset Bundles across all workload types.
 
-## Bundle Structure
+---
 
-### Required Fields
-- `bundle.name` - Unique bundle identifier (use kebab-case)
-- `resources.jobs` - At least one job definition
-- `job.name` - Human-readable job name
-- `job.tasks` - At least one task
-- `task.task_key` - Unique task identifier within job
+## Detailed Patterns by Use Case
 
-### File Structure
+| Use Case | Reference File | Key Resources |
+|----------|----------------|---------------|
+| ETL/Data Engineering | [references/etl.md](references/etl.md) | jobs, schemas, volumes |
+| ML/MLOps | [references/ml.md](references/ml.md) | experiments, models, endpoints, monitors |
+| DLT Pipelines | [references/dlt.md](references/dlt.md) | pipelines, orchestrator jobs |
+| Databricks Apps | [references/apps.md](references/apps.md) | apps, resource bindings, Flask/Gradio |
+| Multi-Team Projects | [references/multi-team.md](references/multi-team.md) | nested includes, shared resources |
+
+---
+
+## Bundle File Organization
+
+### When to Use Single vs Multi-File
+
+| Project Size | Recommendation |
+|--------------|----------------|
+| 1 job, < 3 tasks | Single file |
+| 1-2 jobs, < 5 tasks | Single or multi-file |
+| 3+ jobs OR multiple resource types | Multi-file |
+| ML projects with models/experiments | Multi-file |
+| Team projects | Multi-file |
+
+### Multi-File Structure
+
 ```
 my-bundle/
-├── databricks.yml        # Main bundle configuration
-├── resources/            # Optional: Additional YAML configs
-│   └── jobs.yml
-├── src/                  # Optional: Source code
-│   └── notebooks/
-└── README.md             # Usage instructions
+├── databricks.yml           # Bundle metadata, variables, includes, targets
+├── resources/               # Resource definitions
+│   ├── jobs.yml
+│   ├── pipelines.yml
+│   └── ml_resources.yml
+├── src/                     # Source code
+└── tests/
 ```
 
 ---
 
-## Pattern Selection
-
-Choose the pattern based on workload characteristics:
-
-| Workload | Pattern | Key Features |
-|----------|---------|--------------|
-| Single notebook | Simple ETL | One task, minimal cluster |
-| Multiple notebooks with dependencies | Multi-stage ETL | Task dependencies, shared cluster |
-| MLflow detected | ML Pipeline | ML runtime, larger nodes |
-| Streaming operations | Streaming Job | Long-running, auto-scale |
-| DLT notebooks | DLT Pipeline | Serverless, declarative |
-
----
-
-## Patterns
-
-### 1. Simple ETL
-Single notebook or script running on a schedule.
+## Core databricks.yml Template
 
 ```yaml
 bundle:
-  name: simple-etl
+  name: my-project
 
-resources:
-  jobs:
-    main_job:
-      name: ${bundle.name}-${bundle.target}
-      job_clusters:
-        - job_cluster_key: main
-          new_cluster:
-            spark_version: "14.3.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 2
-      tasks:
-        - task_key: process
-          job_cluster_key: main
-          notebook_task:
-            notebook_path: ./notebook.py
-
-targets:
-  dev:
-    mode: development
-    default: true
-```
-
-### 2. Multi-stage ETL
-Multiple notebooks with task dependencies.
-
-```yaml
-bundle:
-  name: pipeline-etl
+include:
+  - resources/*.yml
 
 variables:
   catalog:
     description: Unity Catalog name
     default: main
-
-resources:
-  jobs:
-    pipeline:
-      name: ${bundle.name}-${bundle.target}
-      job_clusters:
-        - job_cluster_key: main
-          new_cluster:
-            spark_version: "14.3.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            num_workers: 4
-      tasks:
-        - task_key: extract
-          job_cluster_key: main
-          notebook_task:
-            notebook_path: ./01_extract.py
-        - task_key: transform
-          job_cluster_key: main
-          depends_on:
-            - task_key: extract
-          notebook_task:
-            notebook_path: ./02_transform.py
-        - task_key: load
-          job_cluster_key: main
-          depends_on:
-            - task_key: transform
-          notebook_task:
-            notebook_path: ./03_load.py
+  schema:
+    description: Target schema
+    default: default
 
 targets:
   dev:
     mode: development
     default: true
-  prod:
-    mode: production
-```
-
-### 3. ML Pipeline
-Machine learning workload with MLflow integration.
-
-```yaml
-bundle:
-  name: ml-pipeline
-
-resources:
-  jobs:
-    ml_job:
-      name: ${bundle.name}-${bundle.target}
-      job_clusters:
-        - job_cluster_key: ml
-          new_cluster:
-            spark_version: "14.3.x-ml-scala2.12"
-            node_type_id: "i3.2xlarge"
-            num_workers: 4
-            spark_conf:
-              spark.databricks.mlflow.trackingUrl: "databricks"
-      tasks:
-        - task_key: prepare
-          job_cluster_key: ml
-          notebook_task:
-            notebook_path: ./01_prepare_data.py
-        - task_key: train
-          job_cluster_key: ml
-          depends_on:
-            - task_key: prepare
-          notebook_task:
-            notebook_path: ./02_train_model.py
-        - task_key: evaluate
-          job_cluster_key: ml
-          depends_on:
-            - task_key: train
-          notebook_task:
-            notebook_path: ./03_evaluate.py
-```
-
-### 4. Streaming Job
-Long-running streaming workload.
-
-```yaml
-bundle:
-  name: streaming-job
-
-resources:
-  jobs:
-    streaming:
-      name: ${bundle.name}-${bundle.target}
-      continuous:
-        pause_status: UNPAUSED
-      job_clusters:
-        - job_cluster_key: streaming
-          new_cluster:
-            spark_version: "14.3.x-scala2.12"
-            node_type_id: "i3.xlarge"
-            autoscale:
-              min_workers: 2
-              max_workers: 8
-      tasks:
-        - task_key: stream
-          job_cluster_key: streaming
-          notebook_task:
-            notebook_path: ./stream_processor.py
-```
-
----
-
-## Best Practices
-
-### Naming Conventions
-- **Bundle name**: `descriptive-kebab-case` (e.g., `sales-data-pipeline`)
-- **Job name**: `${bundle.name}-${bundle.target}` for environment-specific naming
-- **Resource keys**: `snake_case` (e.g., `main_job`, `etl_cluster`)
-- **Task keys**: `snake_case` descriptive names (e.g., `extract_data`, `train_model`)
-
-### Configuration
-- **Use job clusters**, not existing clusters (except for interactive development)
-- **Add email notifications** for all production jobs
-- **Set timeouts**: `timeout_seconds` prevents runaway jobs
-- **Set retries**: `max_retries` for transient failures
-- **Use variables** for environment-specific values: `${var.catalog}`
-
-### Security
-- **Never hardcode secrets** - use `${secrets.scope.key}` syntax
-- **Add permissions** block for production jobs
-- **Use service principals** in production targets
-- **Restrict access** via workspace permissions
-
-### Environment Targets
-```yaml
-targets:
-  dev:
-    mode: development
-    default: true
-    # Smaller clusters, paused schedules
-    workspace:
-      host: ${DATABRICKS_HOST}
-
-  staging:
-    mode: development
-    # Medium clusters, test schedules
+    variables:
+      catalog: dev_catalog
 
   prod:
     mode: production
-    # Full clusters, active schedules
+    variables:
+      catalog: prod_catalog
     run_as:
       service_principal_name: sp-production
 ```
 
 ---
 
+## Single-File Patterns
+
+### Simple Job
+
+```yaml
+bundle:
+  name: simple-job
+
+resources:
+  jobs:
+    main_job:
+      name: ${bundle.name}-${bundle.target}
+      tasks:
+        - task_key: process
+          notebook_task:
+            notebook_path: ./src/notebook.py
+
+targets:
+  dev:
+    mode: development
+    default: true
+```
+
+### Simple DLT Pipeline
+
+```yaml
+bundle:
+  name: simple-dlt
+
+resources:
+  pipelines:
+    main_pipeline:
+      name: ${bundle.name}-${bundle.target}
+      catalog: ${var.catalog}
+      target: ${var.schema}
+      serverless: true
+      development: ${bundle.target == "dev"}
+      libraries:
+        - notebook:
+            path: ./src/pipeline.py
+
+targets:
+  dev:
+    default: true
+```
+
+---
+
+## Supported Resource Types
+
+| Resource | Description | Key Use Cases |
+|----------|-------------|---------------|
+| `jobs` | Workflow orchestration | ETL, ML training, batch inference |
+| `pipelines` | Lakeflow Declarative Pipelines | Streaming, medallion architecture |
+| `experiments` | MLflow experiments | ML experiment tracking |
+| `registered_models` | Unity Catalog models | Model registry |
+| `model_serving_endpoints` | Model serving | Real-time inference |
+| `quality_monitors` | Lakehouse monitoring | Data/model quality |
+| `schemas` | Unity Catalog schemas | Data organization |
+| `volumes` | Unity Catalog volumes | File storage |
+| `clusters` | Compute clusters | Shared compute |
+| `dashboards` | AI/BI dashboards | Analytics visualization |
+| `apps` | Custom web applications | Dashboards, job managers |
+| `secret_scopes` | Secret management | Credentials storage |
+
+---
+
+## Task Types Reference
+
+| Task Type | Key | Use Case |
+|-----------|-----|----------|
+| Notebook | `notebook_task` | Python/SQL/R notebooks |
+| Python Script | `spark_python_task` | Python files (.py) |
+| Python Wheel | `python_wheel_task` | Packaged Python |
+| SQL | `sql_task` | SQL files, queries |
+| dbt | `dbt_task` | dbt transformations |
+| Pipeline | `pipeline_task` | DLT pipeline refresh |
+| Run Job | `run_job_task` | Orchestrate other jobs |
+| Condition | `condition_task` | Branching logic |
+| For Each | `for_each_task` | Parallel iterations |
+
+---
+
 ## Cluster Configuration
 
-### Decision Tree
-```
-Is it a notebook task?
-├─ Yes → Consider serverless (no cluster config needed)
-└─ No (Python/Wheel/SQL) → Need cluster config
+### Serverless (Recommended)
 
-Need cluster config?
-├─ User has preferred cluster ID → Fetch config, create job_cluster
-├─ User wants serverless → Use environment_key + environments
-└─ No preference → Suggest serverless or small cluster
-```
-
-### Recommended Configurations
-
-**Standard ETL:**
 ```yaml
-new_cluster:
-  spark_version: "14.3.x-scala2.12"
-  node_type_id: "i3.xlarge"
-  num_workers: 2
-```
-
-**ML Workloads:**
-```yaml
-new_cluster:
-  spark_version: "14.3.x-ml-scala2.12"
-  node_type_id: "i3.2xlarge"
-  num_workers: 4
-```
-
-**Serverless:**
-```yaml
+# For notebooks - omit cluster config
 tasks:
-  - task_key: process
+  - task_key: notebook_task
     notebook_task:
       notebook_path: ./notebook.py
-    # No job_cluster_key = serverless
+
+# For Python/dbt - use environment_key
+tasks:
+  - task_key: python_task
+    spark_python_task:
+      python_file: ./main.py
+    environment_key: default
+environments:
+  - environment_key: default
+    spec:
+      dependencies:
+        - pandas>=2.0.0
+```
+
+### Job Cluster
+
+```yaml
+job_clusters:
+  - job_cluster_key: main
+    new_cluster:
+      spark_version: "15.4.x-scala2.12"
+      node_type_id: "i3.xlarge"
+      num_workers: 4
+tasks:
+  - task_key: my_task
+    job_cluster_key: main
+```
+
+### ML Runtime Cluster
+
+```yaml
+job_clusters:
+  - job_cluster_key: ml
+    new_cluster:
+      spark_version: "15.4.x-ml-scala2.12"
+      node_type_id: "i3.2xlarge"
+      num_workers: 4
 ```
 
 ---
 
-## Common Workflows
+## Include Patterns
 
-### Workflow 1: Notebook → Bundle
-1. Analyze notebook(s) with `analyze_notebook` tool
-2. Determine cluster requirements from analysis
-3. Generate bundle with appropriate pattern
-4. Validate with `databricks bundle validate`
-5. Deploy with `databricks bundle deploy -t dev`
+```yaml
+# Basic
+include:
+  - resources/*.yml
 
-### Workflow 2: Existing Job → Bundle
-1. Use `generate_bundle_from_job` tool
-2. Review generated configuration
-3. Validate bundle
-4. Deploy alongside or replace original job
+# Recursive (multi-team)
+include:
+  - resources/**/*.yml
 
-### Workflow 3: DLT Pipeline → Bundle
-1. Export pipeline configuration
-2. Extract source notebooks
-3. Create bundle with DLT resource
-4. Use serverless configuration
-5. Validate and deploy
+# Selective
+include:
+  - resources/jobs.yml
+  - resources/pipelines.yml
+```
 
 ---
 
-## Validation Commands
+## Resource File Naming Conventions
+
+| Resource Type | Recommended Filename |
+|---------------|---------------------|
+| Jobs | `jobs.yml` |
+| Pipelines | `pipelines.yml` |
+| ML Resources | `ml_resources.yml` |
+| Schemas | `schemas.yml` |
+| Volumes | `volumes.yml` |
+| Dashboards | `dashboards.yml` |
+| Apps | `apps.yml` |
+
+---
+
+## CLI Commands
 
 ```bash
 # Validate bundle
 databricks bundle validate
-
-# Validate specific target
 databricks bundle validate -t prod
 
-# Deploy to development
+# Deploy to target
 databricks bundle deploy -t dev
 
-# Deploy to production
-databricks bundle deploy -t prod
-
-# Run job
+# Run a job
 databricks bundle run -t dev main_job
+
+# Generate from existing job
+databricks bundle generate job --existing-job-id 123456
+
+# Destroy resources
+databricks bundle destroy -t dev
 ```
+
+---
+
+## Best Practices
+
+### File Organization
+- Use `resources/` folder for all resource definitions
+- One file per resource type (or per team)
+- Keep `databricks.yml` minimal
+
+### Variables
+```yaml
+variables:
+  catalog:
+    description: Unity Catalog name  # Always add descriptions
+    default: main
+  warehouse_id:
+    lookup:
+      warehouse: my-warehouse  # Auto-lookup by name
+```
+
+### Security
+```yaml
+# Use secrets, not hardcoded values
+spark_conf:
+  api_key: ${secrets.my_scope.api_key}
+
+# Add permissions for production
+permissions:
+  - level: CAN_MANAGE
+    service_principal_name: sp-production
+```
+
+### Naming Conventions
+- **Bundle name**: `descriptive-kebab-case`
+- **Job name**: `${bundle.name}-${bundle.target}`
+- **Resource keys**: `snake_case`
+- **Task keys**: `snake_case`
 
 ---
 
@@ -326,21 +320,17 @@ databricks bundle run -t dev main_job
 
 | Issue | Fix |
 |-------|-----|
-| Missing workspace host | Add `host: ${DATABRICKS_HOST}` under targets.TARGET.workspace |
-| Invalid spark_version | Use format like `"14.3.x-scala2.12"` (with quotes) |
-| Task without cluster | Add `job_cluster_key` or use serverless |
+| Resources not found | Check `include:` paths match file locations |
+| Duplicate resource keys | Ensure unique keys across all included files |
+| Missing workspace host | Add `host:` under `workspace` or target |
+| Invalid spark_version | Use format like `"15.4.x-scala2.12"` (with quotes) |
 | YAML syntax error | Check indentation (2 spaces, no tabs) |
-| Missing permissions | Add `permissions` block for shared jobs |
 
 ---
 
-## MCP Tools Reference
+## References
 
-| Tool | Purpose |
-|------|---------|
-| `analyze_notebook` | Extract patterns, libraries, widgets from notebook |
-| `generate_bundle` | Create bundle context for YAML generation |
-| `generate_bundle_from_job` | Convert existing job to bundle |
-| `validate_bundle` | Run bundle validation |
-| `upload_bundle` | Upload to workspace |
-| `run_bundle_command` | Execute validate/deploy/run |
+- [Bundle Configuration Examples](https://docs.databricks.com/aws/en/dev-tools/bundles/examples)
+- [Bundle Resources Reference](https://docs.databricks.com/aws/en/dev-tools/bundles/resources)
+- [Task Types Reference](https://docs.databricks.com/aws/en/dev-tools/bundles/job-task-types)
+- [Bundle Examples Repository](https://github.com/databricks/bundle-examples)

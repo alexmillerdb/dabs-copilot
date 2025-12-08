@@ -57,6 +57,11 @@ async def generate(
         "-y",
         help="Skip confirmation prompts",
     ),
+    skip_cache: bool = typer.Option(
+        False,
+        "--skip-cache",
+        help="Skip analysis cache and force fresh analysis",
+    ),
 ):
     """
     Generate a Databricks Asset Bundle from a job or workspace path.
@@ -109,10 +114,12 @@ async def generate(
     console.print()
 
     # Build the prompt based on source type - guide agent through subagent workflow
+    cache_directive = " Use skip_cache=true for all analyze_notebook calls." if skip_cache else ""
+
     if source_type == "job":
         prompt = f"""Generate a Databricks Asset Bundle using subagents:
 
-1. Use dab-analyst to analyze job {source} - get job config and analyze all referenced notebooks
+1. Use dab-analyst to analyze job {source} - get job config and analyze all referenced notebooks{cache_directive}
 2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
 3. Write the final databricks.yml to '{output_path}'
 
@@ -121,7 +128,7 @@ Return the generated YAML content and validation status."""
     elif source_type == "workspace":
         prompt = f"""Generate a Databricks Asset Bundle using subagents:
 
-1. Use dab-analyst to analyze workspace path '{source}' - list and analyze all notebooks
+1. Use dab-analyst to analyze workspace path '{source}' - list and analyze all notebooks{cache_directive}
 2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
 3. Write the final databricks.yml to '{output_path}'
 
@@ -130,7 +137,7 @@ Return the generated YAML content and validation status."""
     else:  # local
         prompt = f"""Generate a Databricks Asset Bundle:
 
-1. Analyze local path '{source}' for notebooks and code files
+1. Analyze local path '{source}' for notebooks and code files{cache_directive}
 2. Use dab-builder to generate '{bundle_name}' bundle for '{target}' target and validate it
 3. Write the final databricks.yml to '{output_path}'
 
